@@ -1,0 +1,5 @@
+{
+  "ARDUINO_BOARD": "pro",
+  "ARDUINO_PROCESSOR": "16MHzatmega328",
+  "ARDUINO_HOME": "./resources/arduino-1.6.1"
+}

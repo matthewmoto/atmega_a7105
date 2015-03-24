@@ -1,0 +1,446 @@
+Only in master/: Debug
+diff -ur master/global.h slave/global.h
+--- master/global.h	2008-12-20 15:31:08.000000000 -0500
++++ slave/global.h	2008-12-20 16:10:14.000000000 -0500
+@@ -20,7 +20,11 @@
+ #include  "sbit.h"
+ #include  "A7105.h"
+ /****************************************/
++#define    direction_rxd        ddrDbit0
++#define    direction_txd        ddrDbit1
++/****************************************/
+     /* declare const */    
++#define    crystal              4000000    
+ #define    cFIFOlength          0x08               /* FIFOå‘é€å’Œæ¥æ”¶ä¸€æ¬¡çš„å­—èŠ‚æ“¿*/
+ /****************************************/
+     /* declare flag */
+@@ -28,7 +32,7 @@
+                                   uchar R_flag0;
+                                   struct{
+                                          uchar
+-                                            bFlag_Packet_Transimit:1;
++                                            bFlag_Packet_Receive:1;
+                                         };
+                                  }@ 0x0f;    
+ /****************************************/
+@@ -49,6 +53,7 @@
+ extern  void    RF_Setup_transmiter(void);
+ extern  void    A7105_Fifo_Read(uchar *read_buff);
+ extern  void    A7105_Fifo_Write(uchar *write_buff);
++extern  unsigned char A7105_Register_Read(unsigned char address);
+ 
+ /* mac-A7105.c */
+-extern  void    Event_Transimit_Packet(uchar *write_buffer);
++extern  void    Event_Wireless_Receive(uchar *read_buffer);
+diff -ur master/init.c slave/init.c
+--- master/init.c	2008-12-20 16:12:56.000000000 -0500
++++ slave/init.c	2008-12-20 16:09:32.000000000 -0500
+@@ -1,28 +1,37 @@
+ #include  "init.h"
+ /***********************************************
+-º¯ Êı:	Init_Timer1
+-¹¦ ÄÜ:	³õÊ¼»¯MCUÊ±¼ä¼ÆÊıÆ÷
++º¯ Êı:	Init_Ports
++¹¦ ÄÜ:	³õÊ¼»¯IO×´Ì¬
+ Êä Èë:	/
+ Êä ³ö:	/
+-Ãè Êö:	1ms
++Ãè Êö:	/
++***********************************************/
++void    Init_Ports(void)
++{     
++        direction_rxd             = direction_input;        
++        direction_txd             = direction_output;
++}
++/***********************************************
++º¯ Êı:	Init_Rs232
++¹¦ ÄÜ:	³õÊ¼»¯MCU´®¿Ú×´Ì¬
++Êä Èë:	/
++Êä ³ö:	/
++Ãè Êö:	/
+ ***********************************************/
+-void    Init_Timer1(void)
++void    Init_Rs232(void)
+ {
+-        /* timer1 time 1ms */
+-        OCR1AH       = 0x0F;
+-        OCR1AL       = 0xA0;
+-
+-        TCNT1H       = 0x00;
+-        TCNT1L       = 0x00;
+-
+-        /* CLKi/o = 1,no prescaling,CTC mode */
+-        TCCR1A       = 0x00;
+-        TCCR1B       = 0x09;
+-        TCCR1C       = 0x00;
++        /* U2X0 =1 */
++        UCSR0A                 = 0x02;
++        
++        /* TXEN0 = 1,RXEN0 = 1,enable USART0 TX and USART0 RX,disable USART0 interrupt */
++        UCSR0B                 = 0x18;
+ 
+-        /* disable compareB,overflow interrupt,enable compareA */
+-        TIFR1        = 0x27;      
+-        TIMSK1       = 0x02;
++        /* asynchronism,8 bit data,none parity,1 stop bit */
++        UCSR0C                 = 0x06;
++ 	
++        /* ´®¿ÚËÙÂÊÉèÖÃ */
++        UBRR0H                 = ((crystal/9600/8)-1)/256;
++        UBRR0L                 = ((crystal/9600/8)-1)%256;                 
+ }
+ /***********************************************
+ º¯ Êı:	PowerOn_Initialisation
+@@ -43,9 +52,12 @@
+             asm("nop");
+             asm("nop");
+         }
+-	
+-        /* ³õÊ¼»¯timer1¶¨Ê±1ms */
+-        Init_Timer1();
++
++        /* ³õÊ¼»¯MCU¶Ë¿Ú×´Ì¬ */
++        Init_Ports();
++        
++        /* ³õÊ¼»¯UART */
++        Init_Rs232();
+         
+         /* ³õÊ¼»¯RF */
+         Initialisation_RF();
+diff -ur master/mac-A7105.c slave/mac-A7105.c
+--- master/mac-A7105.c	2008-12-20 15:34:02.000000000 -0500
++++ slave/mac-A7105.c	2008-12-20 15:58:16.000000000 -0500
+@@ -1,22 +1,31 @@
+ #include    "mac-A7105.h"
+ /***********************************************
+-º¯ Êı:	Event_Transimit_Packet()
+-¹¦ ÄÜ:	·¢ÉäRFÊı¾İ°ü´¦Àí
++º¯ Êı:	Event_Wireless_Receive()
++¹¦ ÄÜ:	½ÓÊÕRF×´Ì¬´¦Àí
+ Êä Èë:	/
+ Êä ³ö:	/
+-Ãè Êö:	/
++Ãè Êö:	Ö÷³ÌĞò²ÉÓÃµ÷ÓÃ´Ë×Ó³ÌĞò²éÑ¯RF×´Ì¬
+ ***********************************************/
+-void    Event_Transimit_Packet(uchar *write_buffer)
++void    Event_Wireless_Receive(uchar *read_buffer)
+ {
+-        /* Ğ´ÈëA7105ÄÚ²¿FIFOĞèÒª·¢ÉäµÄÊı¾İ */
+-        A7105_Fifo_Write(&write_buffer[0]);
++        uchar temp;
++        
++        if(!GPIO1_WTR)
++        {
++            temp    = A7105_Register_Read(0x00);
++            
++            if((temp&0x20) == 0x00) 
++            {/* CRCĞ£ÑéÕıÈ·,¶Á³öFIFOÊı¾İ */
++                A7105_Fifo_Read(read_buffer);              
+                 
+-        /* ½øÈë·¢Éä×´Ì¬,½«ÓÉÓ²¼ş×Ô¶¯·¢ÉäÊı¾İ */
+-        RF_Setup_transmiter();
++
++                /* ¿Í»§Ìí¼Ó×Ô¼º³ÌĞò,RFÊı¾İĞ£ÑéÕıÈ·,´¦ÀíÊı¾İ */
++                bFlag_Packet_Receive  = true;
+                 
+-        /* µÈ´ı·¢ÉäÊı¾İÍê³É,ËÀÑ­»·²éÑ¯IO·½Ê½,¿Í»§¿É¸ù¾İĞèÒª×Ô¼ºĞŞ¸ÄÎªÖĞ¶ÏµÈ·½Ê½ */
+-        while(GPIO1_WTR){};
+                 
+-        /* Íê³Éµ±Ç°Êı¾İÖ¡µÄ·¢Éäºó,Ó²¼ş×Ô¶¯½øÈëÁËStandByÄ£Ê½,¿Í»§¿É¸ù¾İ×Ô¼ºĞèÒªĞŞ¸ÄÎªsleep»òÕßreceiverµÈ,µ±Ç°Ñ¡Ôñ½øÈë½ÓÊÕ×´Ì¬ */
+-        RF_Setup_receiver();
++            }             
++            
++            /* ÖØĞÂ½øÈë½ÓÊÕ×´Ì¬ */    
++            RF_Setup_receiver();
++        }
+ }
+diff -ur master/mac-A7105.h slave/mac-A7105.h
+--- master/mac-A7105.h	2008-12-20 15:33:18.000000000 -0500
++++ slave/mac-A7105.h	2008-12-20 15:56:38.000000000 -0500
+@@ -8,5 +8,5 @@
+      /*  declare const */     
+ /****************************************/
+      /* declare founction */ 
+-void    Event_Transimit_Packet(uchar *write_buffer);
++void    Event_Wireless_Receive(uchar *read_buffer);
+ 
+diff -ur master/main.c slave/main.c
+--- master/main.c	2008-12-20 15:51:54.000000000 -0500
++++ slave/main.c	2008-12-20 16:10:40.000000000 -0500
+@@ -1,3 +1,14 @@
++		/***********************************************
++		*	copyrite (c) 2003
++		*¹«Ë¾:		  ÉîÛÚ¿Æ¼¼ÓĞÏŞ¹«Ë¾
++		*ÎÄ¼şÃû: 	  main.c(IAR Embedded Workbench IDE 4.10 for AVR)
++		*×÷Õß:		  larry
++		*µ±Ç°°æ±¾:        v1.0
++		*¿ªÊ¼Ê±¼ä:        2008-3-12 10:13
++		*Íê³ÉÈÕÆÚ:	  
++		*ÕªÒª:		  ¾§Õñ8Mhz,mega48,+5v supply
++		*ĞŞ¸Ä:		
++		************************************************/				
+ #include	"main.h"
+ /***********************************************
+ º¯ Êı:	main
+@@ -11,34 +22,39 @@
+         /* ÉÏµç³õÊ¼»¯ÏµÍ³ */
+         PowerOn_Initialisation();
+         
+-        /* Ê¹ÄÜÈ«¾ÖÖĞ¶Ï */
+-        __enable_interrupt();
+-        
+         while(true)
+-        {     
+-            if(bFlag_Packet_Transimit)
+-            { 
+-                Event_Transimit_Packet(send);
+-                
+-                send_count            = 1000;
+-                bFlag_Packet_Transimit= false;                
+-            }
+-        }        
+-}
+-/***********************************************
+-º¯ Êı:	Timer1_CompareA_Entry
+-¹¦ ÄÜ:	Ê±¼ä±È½ÏÖĞ¶Ï´¦Àí
+-Êä Èë:	/
+-Êä ³ö:	/
+-Ãè Êö:	/
+-***********************************************/
+-#pragma      vector = TIMER1_COMPA_vect
+-__interrupt  void  Timer1_CompareA_Entry(void)
+-{
+-        if(send_count)
+         {
+-            if((--send_count) == 0x00)
+-                bFlag_Packet_Transimit    = true;
+-        }
++            Event_Wireless_Receive(rece_buff);
++            
++            if(bFlag_Packet_Receive)
++            {  
++                bFlag_Packet_Receive   = false;
++                              
++                UDR0     = rece_buff[0];
++                while(!(UCSR0A&0x20)){};
++                UCSR0A      |= 0x20;
++                UDR0     = rece_buff[1];
++                while(!(UCSR0A&0x20)){};
++                UCSR0A      |= 0x20;
++                UDR0     = rece_buff[2];
++                while(!(UCSR0A&0x20)){};
++                UCSR0A      |= 0x20;
++                UDR0     = rece_buff[3];
++                while(!(UCSR0A&0x20)){};
++                UCSR0A      |= 0x20;
++                UDR0     = rece_buff[4];
++                while(!(UCSR0A&0x20)){};
++                UCSR0A      |= 0x20;
++                UDR0     = rece_buff[5];
++                while(!(UCSR0A&0x20)){};
++                UCSR0A      |= 0x20;
++                UDR0     = rece_buff[6];
++                while(!(UCSR0A&0x20)){};
++                UCSR0A      |= 0x20;
++                UDR0     = rece_buff[7];
++                while(!(UCSR0A&0x20)){};
++                UCSR0A      |= 0x20;
++            }            
++        }        
+ }
+ 
+Only in master/: main.dep
+Only in master/: main.ewd
+Only in master/: main.ewp
+diff -ur master/main.eww slave/main.eww
+--- master/main.eww	2008-12-20 16:14:06.000000000 -0500
++++ slave/main.eww	2008-12-20 16:11:16.000000000 -0500
+@@ -2,7 +2,7 @@
+ 
+ <workspace>
+   <project>
+-    <path>$WS_DIR$\main.ewp</path>
++    <path>$WS_DIR$\slave.ewp</path>
+   </project>
+   <batchBuild/>
+ </workspace>
+diff -ur master/main.h slave/main.h
+--- master/main.h	2008-12-20 15:55:48.000000000 -0500
++++ slave/main.h	2008-12-20 15:55:36.000000000 -0500
+@@ -1,8 +1,7 @@
+ #include        "global.h"
+ /****************************************/
+     /*  declare variable */
+-uint  send_count = 1000;
+-uchar send[cFIFOlength] = {0x12,0x34,0x56,0x78,0x9a,0xbc,0xde,0xf0};   
++uchar rece_buff[cFIFOlength] = {0xaa};   
+ /****************************************/
+      /* declare founction */
+      
+Only in master/Release/Exe: main.a90
+Only in slave/Release/Exe: slave.a90
+Binary files master/Release/Obj/init.r90 and slave/Release/Obj/init.r90 differ
+Binary files master/Release/Obj/mac-A7105.r90 and slave/Release/Obj/mac-A7105.r90 differ
+Only in master/Release/Obj: main.pbd
+Binary files master/Release/Obj/main.r90 and slave/Release/Obj/main.r90 differ
+Binary files master/Release/Obj/phy-A7105.r90 and slave/Release/Obj/phy-A7105.r90 differ
+Only in slave/Release/Obj: slave.pbd
+Only in master/settings: main.dbgdt
+Only in master/settings: main.dni
+diff -ur master/settings/main.wsdt slave/settings/main.wsdt
+--- master/settings/main.wsdt	2008-12-20 16:14:06.000000000 -0500
++++ slave/settings/main.wsdt	2008-12-20 16:11:16.000000000 -0500
+@@ -3,14 +3,14 @@
+ <Workspace>
+   <ConfigDictionary>
+     <CurrentConfigs>
+-      <Project>main/Release</Project>
++      <Project>slave/Release</Project>
+     </CurrentConfigs>
+   </ConfigDictionary>
+   <Desktop>
+     <Static>
+       <Workspace>
+         <ColumnWidths>
+-          <Column0>122</Column0>
++          <Column0>121</Column0>
+           <Column1>27</Column1>
+           <Column2>27</Column2>
+           <Column3>27</Column3>
+@@ -24,44 +24,60 @@
+       </Build>
+     </Static>
+     <Windows>
+-      <Wnd0>
++      <Wnd1>
+         <Tabs>
+           <Tab>
+-            <Identity>TabID-16296-31512</Identity>
++            <Identity>TabID-14288-28684</Identity>
+             <TabName>Workspace</TabName>
+             <Factory>Workspace</Factory>
+             <Session>
+               <NodeDict>
+-                <ExpandedNode>main</ExpandedNode>
++                <ExpandedNode>slave</ExpandedNode>
+               </NodeDict>
+             </Session>
+           </Tab>
+         </Tabs>
+         <SelectedTab>0</SelectedTab>
+-      </Wnd0>
+-      <Wnd1>
++      </Wnd1>
++      <Wnd0>
+         <Tabs>
+           <Tab>
+-            <Identity>TabID-11361-31810</Identity>
++            <Identity>TabID-16149-28854</Identity>
+             <TabName>Build</TabName>
+             <Factory>Build</Factory>
+             <Session/>
+           </Tab>
+         </Tabs>
+         <SelectedTab>0</SelectedTab>
+-      </Wnd1>
++      </Wnd0>
+     </Windows>
+     <Editor>
+       <Pane>
+         <Tab>
+           <Factory>TextEditor</Factory>
+-          <Filename>F:\AVR\C\A7105\SourceCode\&#x4e50;&#x534e;demo\master\init.c</Filename>
++          <Filename>F:\AVR\C\A7105\SourceCode\&#x4e50;&#x534e;demo\slave\main.c</Filename>
++          <XPos>0</XPos>
++          <YPos>0</YPos>
++          <SelStart>813</SelStart>
++          <SelEnd>813</SelEnd>
++        </Tab>
++        <Tab>
++          <Factory>TextEditor</Factory>
++          <Filename>F:\AVR\C\A7105\SourceCode\&#x4e50;&#x534e;demo\slave\init.c</Filename>
+           <XPos>0</XPos>
+           <YPos>0</YPos>
+-          <SelStart>259</SelStart>
+-          <SelEnd>259</SelEnd>
++          <SelStart>945</SelStart>
++          <SelEnd>945</SelEnd>
+         </Tab>
+-        <ActiveTab>0</ActiveTab>
++        <Tab>
++          <Factory>TextEditor</Factory>
++          <Filename>F:\AVR\C\A7105\SourceCode\&#x4e50;&#x534e;demo\slave\mac-A7105.c</Filename>
++          <XPos>0</XPos>
++          <YPos>0</YPos>
++          <SelStart>774</SelStart>
++          <SelEnd>774</SelEnd>
++        </Tab>
++        <ActiveTab>2</ActiveTab>
+       </Pane>
+       <ActivePane>0</ActivePane>
+       <Sizes>
+@@ -76,31 +92,31 @@
+       <Top>
+         <Row0>
+           <Sizes>
+-            <Toolbar-0092e250>
++            <Toolbar-0092e2e8>
+               <key>iaridepm1</key>
+-            </Toolbar-0092e250>
++            </Toolbar-0092e2e8>
+           </Sizes>
+         </Row0>
+       </Top>
+       <Left>
+         <Row0>
+           <Sizes>
+-            <Wnd0>
++            <Wnd1>
+               <Rect>
+                 <Top>-2</Top>
+                 <Left>-2</Left>
+                 <Bottom>744</Bottom>
+-                <Right>196</Right>
++                <Right>195</Right>
+                 <x>-2</x>
+                 <y>-2</y>
+-                <xscreen>198</xscreen>
+-                <yscreen>198</yscreen>
+-                <sizeHorzCX>154687</sizeHorzCX>
+-                <sizeHorzCY>200811</sizeHorzCY>
+-                <sizeVertCX>154687</sizeVertCX>
++                <xscreen>197</xscreen>
++                <yscreen>197</yscreen>
++                <sizeHorzCX>153906</sizeHorzCX>
++                <sizeHorzCY>199797</sizeHorzCY>
++                <sizeVertCX>153906</sizeVertCX>
+                 <sizeVertCY>756592</sizeVertCY>
+               </Rect>
+-            </Wnd0>
++            </Wnd1>
+           </Sizes>
+         </Row0>
+       </Left>
+@@ -112,7 +128,7 @@
+       <Bottom>
+         <Row0>
+           <Sizes>
+-            <Wnd1>
++            <Wnd0>
+               <Rect>
+                 <Top>-2</Top>
+                 <Left>-2</Left>
+@@ -127,7 +143,7 @@
+                 <sizeVertCX>156250</sizeVertCX>
+                 <sizeVertCY>202839</sizeVertCY>
+               </Rect>
+-            </Wnd1>
++            </Wnd0>
+           </Sizes>
+         </Row0>
+       </Bottom>
+Only in slave/settings: slave.dbgdt
+Only in slave/settings: slave.dni
+Only in slave/: slave.dep
+Only in slave/: slave.ewd
+Only in slave/: slave.ewp
