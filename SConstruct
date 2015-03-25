@@ -175,6 +175,7 @@ ARDUINO_PROCESSOR   = resolve_var('ARDUINO_PROCESSOR', 'atmega328')
 ARDUINO_VER     = resolve_var('ARDUINO_VER', 0) # Default to 0 if nothing is specified
 RST_TRIGGER     = resolve_var('RST_TRIGGER', None) # use built-in pulseDTR() by default
 EXTRA_LIB       = resolve_var('EXTRA_LIB', None) # handy for adding another arduino-lib dir
+USER_DEFINED_CFLAGS = resolve_var('USER_DEFINED_CFLAGS', None) # handy for adding another arduino-lib dir
 
 if not ARDUINO_HOME:
     print 'ARDUINO_HOME must be defined.'
@@ -306,6 +307,8 @@ extra_cflags = [
     '-B/usr/avr/lib/avr5/',
     ]
 cFlags += extra_cflags
+
+cFlags += [USER_DEFINED_CFLAGS]
 
 if ARDUINO_BOARD == "leonardo":
     cFlags += ["-DUSB_VID="+getBoardConf('build.vid')]
@@ -456,6 +459,7 @@ for line in open(TARGET + sketchExt):
 if ARDUINO_VER >= 20 and 'Ethernet' in libCandidates:
     libCandidates.append('SPI')
 
+
 all_libs_sources = []
 for index, orig_lib_dir in enumerate(ARDUINO_LIBS):
     lib_dir = 'build/lib_%02d' % index
@@ -472,6 +476,7 @@ for index, orig_lib_dir in enumerate(ARDUINO_LIBS):
             envArduino.Append(CPPPATH = utilDir.replace(orig_lib_dir, lib_dir))
         lib_sources = (x.replace(orig_lib_dir, lib_dir) for x in lib_sources)
         all_libs_sources.extend(lib_sources)
+
 
 # Add raw sources which live in sketch dir.
 build_top = path.realpath('.')
