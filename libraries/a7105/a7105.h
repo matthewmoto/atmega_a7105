@@ -7,7 +7,23 @@
 #define A7105_GPIO_WTR 0x01 //Code to set a GIO pin to do WTR activity (be high during transmit/receive and low otherwise)
 #define A7105_SPI_CLOCK 500000 //Clock rate for SPI communications with A7105's
 
-#define HIGHEST_CHANNEL 0xA8 //Defined in datasheet pg. 59
+#define A7105_HIGHEST_CHANNEL 0xA8 //Defined in datasheet pg. 59
+
+#define A7105_CALIBRATION_TIMEOUT 500 //milliseconds before we call autocalibrating a failure
+
+//Status codes for returns from the various functions in this library
+//See individual functions below for meanings
+enum A7105_Status_Code{
+  A7105_STATUS_OK,
+  A7105_INIT_ERROR,
+  A7105_CALIBRATION_ERROR,
+  A7105_INVALID_CHANNEL,
+  A7105_INVALID_FIFO_LENGTH,
+  A7105_RX_DATA_WAITING,
+  A7105_NO_DATA,
+  A7105_NO_WTR_INTERRUPT_SET,
+  A7105_BUSY,
+};
 
 enum A7105_State {
     A7105_SLEEP     = 0x80,
@@ -18,6 +34,12 @@ enum A7105_State {
     A7105_TX        = 0xD0,
     A7105_RST_WRPTR = 0xE0,
     A7105_RST_RDPTR = 0xF0,
+};
+
+enum {
+  A7105_INT_IGNORE_ONE = 0,
+  A7105_INT_NULL = 1,
+  A7105_INT_TRIGGERED = 2
 };
 
 enum {
@@ -110,10 +132,6 @@ enum A7105_ProtoCmds {
     A7105_PROTOCMD_TELEMETRYSTATE,
 };
 
-void PROTOCOL_SetBindState(uint32_t msec);
-
-#define A7105_0F_CHANNEL A7105_0F_PLL_I
-
 struct A7105
 {
   int _CS_PIN; //chip select pin (arduino number) so we can have multipe radios per microcontroller
@@ -122,16 +140,122 @@ struct A7105
                        //-1 if no interrupt pin specified 
 };
 
+//Basic Hardware Functions (basically hardware calls)
+
 void A7105_Initialize(struct A7105* radio, int chip_select_pin);
 void A7105_Initialize(struct A7105* radio, int chip_select_pin, int reset);
 void A7105_WriteReg(struct A7105* radio, byte addr, byte value);
 void A7105_WriteReg(struct A7105* radio, byte addr, uint32_t value);
-int A7105_WriteData(struct A7105* radio, byte *dpbuffer, byte len);
+
+/*
+A7105_Status_Code A7105_Easy_Send_Packet:
+  * radio: Pointer to a valid A7105 structure for state tracking. This 
+           should be a radio that was either previously initialized with
+           A7105_Easy_Setup_Radio() or another function that set up and 
+           calibrated all the registers for the radio.
+  * data:  A valid byte array that is at least 'length' bytes long
+  * length: The length of the packet to send. This must be a multiple of            8 between 1 and 64 (1 is not a multiple of 8 but is valid).
+
+  Side-Effects/Notes: 
+    This function fills the FIFO register of the radio and tells it to transmit.
+    However, when this function returns, the data has not necessarily been 
+    fully transmitted yet (depending on data rate). We set up GIO2 as a
+    WTR pin in A7105_Easy_Setup_Radio() so you can wait until that goes 
+    low to be sure if you use that function.
+
+  Returns:
+    * A7105_STATUS_OK: If the packet was set up for transmission successfully and sending was started.
+    * A7105_INVALID_FIFO_LENGTH: If the length specified was not a legitimate value (multiple of 8 in 1-64)
+*/
+A7105_Status_Code A7105_WriteData(struct A7105* radio, byte *dpbuffer, byte len);
 byte A7105_ReadReg(struct A7105* radio, byte addr);
-void A7105_ReadData(struct A7105* radio, byte *dpbuffer, byte len);
+
+/*
+NOTE: This function will try to read data always if no interrupt pin was specified.
+
+  Returns:
+    * A7105_NO_DATA: If an interrupt wtr pin was specified for the radio and data was detected via that interrupt pin.
+    * A8105_STATUS_OK: If there was data avaiable and waiting *OR*
+                       if no interrupt pin was set, it will just take
+                       whatever is sitting in the radio FIFO register.
+*/
+A7105_Status_Code A7105_ReadData(struct A7105* radio, byte *dpbuffer, byte len);
+A7105_Status_Code A7105_CheckRXWaiting(struct A7105* radio);
 void A7105_Reset(struct A7105* radio);
 void A7105_SetPower(struct A7105* radio, A7105_TxPower power);
 void A7105_Strobe(struct A7105* radio, enum A7105_State);
 
+//Nice Radio Interface (wraps some of the complexity so you don't have to care 
+//about horrible A7105 details...)
 
+/*
+This function is a high-level setup to use radios to talk to each other.
+It sets them up assuming they're XL7105 breakouts with a 16Mhz clock to 
+talk on a specific channel at a specific power. Also, we set up 
+the chips GIO1 pin to be the MISO for 4-wire SPI communication (since 
+the original implementer didn't have a bi-directional logic level switcher
+to translate the 3v3 to 5V for his arduino). Also GIO2 is set as a 
+WTR pin (goes high during TX/RX activity so we can optionally use
+interrupts to see where there is RX data waiting.
+
+See the implementation for all the gritty details.
+
+A7105_Status_Code A7105_Setup_Radio:
+  * radio: Pointer to a A7105 structure for state tracking (no fields need be set)
+  * cs_pin: The arduino pin to use as a chip_select for the radio.
+            NOTE: pinMode() is called in this function for this pin.
+  * wtr_pin: The arduino pin to use that is connected to the GPIO2 
+             pin on the radio. The WTR function (see the datasheet) 
+             makes this pin go high when the radio is active TX or 
+             RX. Specify -1 to ignore. Otherwise, a pin interrupt 
+             will be set for this pin and it will be specified as 
+             input.
+  * radio_id: 4-byte ID to use for communicating radios to recognize
+              each-other's traffic. All radios that talk to each other
+              should have the same 'radio_id'
+  * data_rate: The data rate for communications. Slower = longer-range
+  * channel: 0 - A8. The channel to use for communications. 
+  * power: The power setting to use for TX. Higher is better but 
+           make sure you have a big enough power supply for this.
+
+  Side Effects/Notes:
+    The A7105 does not obey a high-Z state on the GPIO1 line we're 
+    using for MISO so if you are using multiple radios
+    on a single bus, be sure to implement tri-state buffers on their 
+    GPIO1 lines (or use schottkey diodes and a pull-down resistor 
+    like I did) and initalize all radios before using any of them 
+    to avoid interfering with the SPI bus.
+
+    Also, be sure to call this method from the setup() function since
+    we do some pinMode() stuff in here and SPI.begin() calls.
+
+
+  Returns:
+    * A7105_STATUS_OK: If the radio is successfully initialized
+    * A7105_INIT_ERROR: If we can't get any data back from the radio.
+                        This usually means a SPI error since we just
+                        read back the clock settings as a sanity check 
+                        to make sure the radio isn't just a black hole.
+    * A7105_CALIBRATION_ERROR: If the auto-calibration fails for the 
+                               chip. A7105's have to be auto-calibrated
+                               every time they're reset or powered on
+                               and that is done in this function.
+    * A7105_INVALID_CHANNEL: If the specified channel is outside
+                             the allowable range of 0-A8 (given our
+                             pre-set and datasheet recommended channel
+                             steps).
+*/
+A7105_Status_Code A7105_Easy_Setup_Radio(struct A7105* radio, 
+                                    int cs_pin, 
+                                    int wtr_pin, 
+                                    uint32_t radio_id, 
+                                    A7105_DataRate data_rate,
+                                    byte channel,
+                                    A7105_TxPower power);
+
+A7105_Status_Code A7105_Easy_Listen_For_Packets(struct A7105* radio,
+                                                byte length);
+
+
+void _A7105_Pin_Interrupt_Callback();
 #endif
