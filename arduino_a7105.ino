@@ -11,8 +11,11 @@ and bounces data between them using a single
 arduino (pro mini in the original case).
 
 
-TODO: Set up a second radio and try to 
-start bouncing data back and forth (no interrupts yet).
+TODO: 
+
+  * Update A7105 library to include status errors and such
+    for the relevant functions as well as implement (optional)
+    pin interrupt notifications for data being ready
 
 Then, after we successfully pass data, add 
 an interrupt to notify us of pending data to read.
@@ -235,12 +238,7 @@ void send_packet(struct A7105* radio, byte* data, byte length)
     packet[x] = data[x];
   }
 
-  //Set the length of the FIFO data to send
-  //NOTE: This needs to be a multiple of 8
-  //HACK: setting to 64 for testing
-  A7105_WriteReg(radio, A7105_03_FIFOI, (byte)15);
-
-  //Push the data to the radio's FIFO buffer
+    //Push the data to the radio's FIFO buffer
   //(the radio will return to standby mode automagically)
   digitalWrite(RECORD,HIGH);
   A7105_WriteData(radio,packet,16);

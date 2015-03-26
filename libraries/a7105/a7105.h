@@ -117,15 +117,16 @@ void PROTOCOL_SetBindState(uint32_t msec);
 struct A7105
 {
   int _CS_PIN; //chip select pin (arduino number) so we can have multipe radios per microcontroller
-  uint32_t _SPI_CLOCK; //SPI Clock rate in hz
-   
+  int _STATE; //Uses the values of the A7105 Strobe states for tracking interrupts and such 
+  int _INTERRUPT_PIN;  //The pin mapped to GIO2 that get's interrupts on TX/RX (used for tracking data being available)
+                       //-1 if no interrupt pin specified 
 };
 
 void A7105_Initialize(struct A7105* radio, int chip_select_pin);
 void A7105_Initialize(struct A7105* radio, int chip_select_pin, int reset);
 void A7105_WriteReg(struct A7105* radio, byte addr, byte value);
 void A7105_WriteReg(struct A7105* radio, byte addr, uint32_t value);
-void A7105_WriteData(struct A7105* radio, byte *dpbuffer, byte len);
+int A7105_WriteData(struct A7105* radio, byte *dpbuffer, byte len);
 byte A7105_ReadReg(struct A7105* radio, byte addr);
 void A7105_ReadData(struct A7105* radio, byte *dpbuffer, byte len);
 void A7105_Reset(struct A7105* radio);

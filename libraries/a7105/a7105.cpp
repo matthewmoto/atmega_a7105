@@ -61,9 +61,27 @@ void A7105_WriteReg(struct A7105* radio, byte addr, uint32_t data)
   digitalWrite(radio->_CS_PIN,HIGH);
 }
 
+/*
+  Returns success (1) or (0).
 
-void A7105_WriteData(struct A7105* radio, byte *dpbuffer, byte len)
+  NOTE: currently failure only happens on improper length data (must be multiple of 8 between 1 and 64)
+*/
+int A7105_WriteData(struct A7105* radio, byte *dpbuffer, byte len)
 {
+
+  //Check to make sure len is a multiple of 8 between 1 and 64
+  if (len != 1  &&
+      len != 8  &&
+      len != 16 &&
+      len != 32 &&
+      len != 64)
+  {
+    //TODO: Better error codes
+    return 0;
+  }
+
+  //Set the length of the FIFO data to send (len - 1 since it's an end-pointer)
+  A7105_WriteReg(radio, A7105_03_FIFOI, (byte)(len-1));
 
   //Reset the FIFO write pointer
   A7105_Strobe(radio,A7105_RST_WRPTR);
