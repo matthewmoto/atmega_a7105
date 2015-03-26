@@ -1,7 +1,4 @@
 #include "stdint.h"
-
-//#include <PinChangeInt.h>
-
 #include <SPI.h>
 #include <a7105.h> 
 
@@ -41,11 +38,10 @@ results into the mesh library.
 
 #define RADIO_IDS 0xdb042679 //taken from devation code
 
-#define CALIBRATION_TIMEOUT 500 //milliseconds before we call autocalibrating a failure
+#define PING_TIMEOUT 1500 //time we wait between starting a TX and receiving notification of RX
 
 A7105 radio1;
 A7105 radio2;
-
 
 // the setup function runs once when you press reset or power the board
 void setup() {
@@ -53,8 +49,6 @@ void setup() {
 
   Serial.println("Starting...");
 
-  //pinMode(RADIO_SELECT_PIN, OUTPUT);
-  
   //TODO: Can we nuke this safely?
   pinMode(MOSI,OUTPUT);
   pinMode(MISO,INPUT);
@@ -63,11 +57,10 @@ void setup() {
 
   digitalWrite(RECORD,LOW);
 
-  //delay(2000);
 
+  A7105_Status_Code success = A7105_Easy_Setup_Radio(&radio1,RADIO1_SELECT_PIN, RADIO1_WTR_PIN, RADIO_IDS, A7105_DATA_RATE_10Kbps,0,A7105_TXPOWER_100mW);
+  A7105_Status_Code success2 = A7105_Easy_Setup_Radio(&radio2,RADIO2_SELECT_PIN, RADIO2_WTR_PIN, RADIO_IDS, A7105_DATA_RATE_10Kbps,0,A7105_TXPOWER_100mW);
 
-  A7105_Status_Code success = A7105_Easy_Setup_Radio(&radio1,RADIO1_SELECT_PIN, RADIO1_WTR_PIN, RADIO_IDS, A7105_DATA_RATE_100Kbps,0,A7105_TXPOWER_100mW);
-  A7105_Status_Code success2 = A7105_Easy_Setup_Radio(&radio2,RADIO2_SELECT_PIN, RADIO2_WTR_PIN, RADIO_IDS, A7105_DATA_RATE_100Kbps,0,A7105_TXPOWER_100mW);
   Serial.print("Radio 1 Init: ");
   Serial.println(success == A7105_STATUS_OK);
   Serial.print("Radio 2 Init: ");
@@ -98,46 +91,69 @@ void recv_uint32_packet(struct A7105* radio, uint32_t* val)
         
 }
 
+//returns success or error
+int bounce_packet(struct A7105* src, struct A7105* dest, uint32_t value)
+{
+  //Put dest in RX mode so it will hear the packet we're sending with src (8 byte packets since it's the smallest that will
+  //fit a 4 byte uint32_t we're pinging around)
+  A7105_Easy_Listen_For_Packets(dest,8);
 
+  if (A7105_CheckRXWaiting(dest) == A7105_RX_DATA_WAITING)
+  {
+    Serial.println("int malfunction...");
+  }
+
+  //Write Data from radio 1 to radio 2 (just write the 4-byte long of the millis() counter)
+  send_uint32_packet(src,value);
+  Serial.print("Sent from Source Radio: ");
+  Serial.println(value);
+
+  uint32_t sent_time  = millis();
+  uint32_t recv_val = 0;
+  while (A7105_CheckRXWaiting(dest) != A7105_RX_DATA_WAITING &&
+         millis() - sent_time < PING_TIMEOUT)
+  {
+    recv_val++;
+    //delay(1);
+  }
+
+  
+  if (A7105_CheckRXWaiting(dest) == A7105_RX_DATA_WAITING)
+  {
+    uint32_t received_time = millis();
+    recv_uint32_packet(dest,&recv_val);
+    Serial.print("Received data after ");
+    Serial.print(received_time - sent_time);
+    Serial.print("ms: ");
+    Serial.println(recv_val);
+    return 1;
+  }
+  else
+  {
+    Serial.print("Error waiting for RX data: ");
+    if (millis() - sent_time >= PING_TIMEOUT)
+      Serial.println("(timeout)");
+    else
+      Serial.println(A7105_CheckRXWaiting(dest)); 
+  }
+  return 0;
+}
+
+int success = 1;
 // the loop function runs over and over again forever
 void loop() {
 
-  //Put radio2 in RX mode so it will hear the packet we're sending with radio1
-  //A7105_Strobe(&radio2,A7105_RX);
-  A7105_Easy_Listen_For_Packets(&radio2,8);
+  if (success) 
+  {
+    success = bounce_packet(&radio1,&radio2,millis());
+    if (success)
+    {
+      Serial.println("Boucing a packet back...");
+      success = bounce_packet(&radio2,&radio1,millis());
+    }
 
-  //Write Data from radio 1 to radio 2 (just write the 4-byte long of the millis() counter)
-  uint32_t val = millis();
-  digitalWrite(RECORD,HIGH);
-  send_uint32_packet(&radio1,val);
-  digitalWrite(RECORD,LOW);
-  Serial.print("Sent from radio1: ");
-  Serial.println(val);
+    Serial.println("done...");
+  }
 
-  Serial.print("RX ready1: ");
-  Serial.println(A7105_CheckRXWaiting(&radio2));
-   Serial.print("TX ready1: ");
-  Serial.println(A7105_CheckRXWaiting(&radio1));
-  //wait for the packet to transmit (since we don't have interrupts working yet)
-  delay(100);
-  Serial.print("RX ready2: ");
-  Serial.println(A7105_CheckRXWaiting(&radio2));
-  Serial.print("TX ready2: ");
-  Serial.println(A7105_CheckRXWaiting(&radio1));
-
-  //Read the packet from radio2 (hopefully it's there)
-  val = 0;
-  recv_uint32_packet(&radio2,&val);
-  Serial.print("Radio2's fifo had ");
-  Serial.println(val);
-
-  Serial.println("done...");
   delay(5000);
-  //Serial.print("RADIO_CLOCK register: ");
-  //Serial.print(read_reg(RADIO_CLOCK),HEX);
-  //Serial.println("");
-  //digitalWrite(13, HIGH);   // turn the LED on (HIGH is the voltage level)
-  //delay(100000000);              // wait for a second
-  //digitalWrite(13, LOW);    // turn the LED off by making the voltage LOW
-  //delay(100000000);              // wait for a second
 }

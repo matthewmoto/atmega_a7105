@@ -165,6 +165,7 @@ A7105_Status_Code A7105_ReadData(struct A7105* radio, byte *dpbuffer, byte len)
 
 A7105_Status_Code A7105_CheckRXWaiting(struct A7105* radio)
 {
+
   //If the radio specified a WTR pin interrupt, use that data
   //to determine if there is any data waiting
   if (radio->_INTERRUPT_PIN > 0)
