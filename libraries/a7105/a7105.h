@@ -7,6 +7,8 @@
 #define A7105_GPIO_WTR 0x01 //Code to set a GIO pin to do WTR activity (be high during transmit/receive and low otherwise)
 #define A7105_SPI_CLOCK 500000 //Clock rate for SPI communications with A7105's
 
+#define HIGHEST_CHANNEL 0xA8 //Defined in datasheet pg. 59
+
 enum A7105_State {
     A7105_SLEEP     = 0x80,
     A7105_IDLE      = 0x90,
@@ -72,6 +74,16 @@ enum {
     A7105_32_FILTER_TEST  = 0x32,
 };
 
+enum A7105_DataRate {
+  A7105_DATA_RATE_250Kbps = 0x01,
+  A7105_DATA_RATE_125Kbps = 0x03,
+  A7105_DATA_RATE_100Kbps = 0x04,
+  A7105_DATA_RATE_50Kbps = 0x09,
+  A7105_DATA_RATE_25Kbps = 0x13,
+  A7105_DATA_RATE_10Kbps = 0x31,
+  A7105_DATA_RATE_2Kbps = 0xF9,
+};
+
 enum A7105_TxPower {
     A7105_TXPOWER_100uW,
     A7105_TXPOWER_300uW,
@@ -102,11 +114,6 @@ void PROTOCOL_SetBindState(uint32_t msec);
 
 #define A7105_0F_CHANNEL A7105_0F_PLL_I
 
-enum A7105_MASK {
-    A7105_MASK_FBCF = 1 << 4,
-    A7105_MASK_VBCF = 1 << 3,
-};
-
 struct A7105
 {
   int _CS_PIN; //chip select pin (arduino number) so we can have multipe radios per microcontroller
@@ -118,11 +125,11 @@ void A7105_Initialize(struct A7105* radio, int chip_select_pin);
 void A7105_Initialize(struct A7105* radio, int chip_select_pin, int reset);
 void A7105_WriteReg(struct A7105* radio, byte addr, byte value);
 void A7105_WriteReg(struct A7105* radio, byte addr, uint32_t value);
-void A7105_WriteData(struct A7105* radio, byte *dpbuffer, byte len, byte channel);
+void A7105_WriteData(struct A7105* radio, byte *dpbuffer, byte len);
 byte A7105_ReadReg(struct A7105* radio, byte addr);
 void A7105_ReadData(struct A7105* radio, byte *dpbuffer, byte len);
 void A7105_Reset(struct A7105* radio);
-void A7105_SetPower(struct A7105* radio, int power);
+void A7105_SetPower(struct A7105* radio, A7105_TxPower power);
 void A7105_Strobe(struct A7105* radio, enum A7105_State);
 
 

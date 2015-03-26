@@ -10,17 +10,26 @@ void A7105_Initialize(struct A7105* radio, int chip_select_pin)
   A7105_Initialize(radio,chip_select_pin,1);
 }
 
+/*
+  NOTE: This function must be called from setup()
+        since we're setting pin modes (not sure if this is
+        too much a side-effect to have down here).
+*/
 void A7105_Initialize(struct A7105* radio, int chip_select_pin, int reset)
 {
   SPI.begin();
+  
+  pinMode(chip_select_pin, OUTPUT);
 
   //Initialize the chip select pin (HACK: Assume the pin is in OUTPUT mode, do we need to worry about doing this outside of setup()?)
   radio->_CS_PIN = chip_select_pin;
   digitalWrite(radio->_CS_PIN,HIGH);
 
-  //Reset the radio and set-up 4-wire SPI communication
+  //Reset the radio, set-up 4-wire SPI communication and use GPIO2 as a WTR pin (high when transmitting/receiving) for interrupts
   A7105_Reset(radio);
   A7105_WriteReg(radio,A7105_0B_GPIO1_PIN1,(byte)A7105_ENABLE_4WIRE);
+  A7105_WriteReg(radio,A7105_0C_GPIO2_PIN_II,(byte)A7105_GPIO_WTR);
+
 }
 
 void A7105_WriteReg(struct A7105* radio, byte address, byte data)
@@ -53,7 +62,7 @@ void A7105_WriteReg(struct A7105* radio, byte addr, uint32_t data)
 }
 
 
-void A7105_WriteData(struct A7105* radio, byte *dpbuffer, byte len, byte channel)
+void A7105_WriteData(struct A7105* radio, byte *dpbuffer, byte len)
 {
 
   //Reset the FIFO write pointer
@@ -71,7 +80,7 @@ void A7105_WriteData(struct A7105* radio, byte *dpbuffer, byte len, byte channel
 
   // set the channel
   //NOTE: double check this logic
-  A7105_WriteReg(radio, A7105_0F_PLL_I, channel);
+  //A7105_WriteReg(radio, A7105_0F_PLL_I, channel);
 
   //Tell the A7105 to blast the data
   A7105_Strobe(radio,A7105_TX);
