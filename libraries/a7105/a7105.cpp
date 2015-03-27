@@ -29,8 +29,8 @@ void A7105_Initialize(struct A7105* radio, int chip_select_pin, int reset)
 
   //Reset the radio, set-up 4-wire SPI communication and use GPIO2 as a WTR pin (high when transmitting/receiving) for interrupts
   A7105_Reset(radio);
-  A7105_WriteReg(radio,A7105_0B_GPIO1_PIN1,(byte)A7105_ENABLE_4WIRE);
-  A7105_WriteReg(radio,A7105_0C_GPIO2_PIN_II,(byte)A7105_GPIO_WTR);
+  A7105_WriteReg(radio,A7105_0B_GPIO1_PIN,(byte)A7105_ENABLE_4WIRE);
+  A7105_WriteReg(radio,A7105_0C_GPIO2_PIN,(byte)A7105_GPIO_WTR);
 
 }
 
@@ -96,7 +96,7 @@ A7105_Status_Code A7105_WriteData(struct A7105* radio, byte *dpbuffer, byte len)
   }
 
   //Set the length of the FIFO data to send (len - 1 since it's an end-pointer)
-  A7105_WriteReg(radio, A7105_03_FIFOI, (byte)(len-1));
+  A7105_WriteReg(radio, A7105_03_FIFO_I, (byte)(len-1));
 
   //Reset the FIFO write pointer
   A7105_Strobe(radio,A7105_RST_WRPTR);
@@ -138,6 +138,13 @@ byte A7105_ReadReg(struct A7105* radio, byte addr)
 
 A7105_Status_Code A7105_ReadData(struct A7105* radio, byte *dpbuffer, byte len)
 {
+    //ensure len is a valid value
+    if (len > A7105_MAX_FIFO_SIZE)
+    {
+      return A7105_INVALID_FIFO_LENGTH;
+    }
+
+
     //If the radio specified a WTR pin interrupt, use that data
     //to determine if there is any data waiting
     if (radio->_INTERRUPT_PIN > 0 &&
@@ -151,7 +158,6 @@ A7105_Status_Code A7105_ReadData(struct A7105* radio, byte *dpbuffer, byte len)
       //clear the interrupt counter since we're reading
       _A7105_INTERRUPT_COUNTS[radio->_INTERRUPT_PIN] = A7105_INT_NULL;
     }
-
 
     //Reset the FIFO read pointer
     A7105_Strobe(radio, A7105_RST_RDPTR); 
@@ -259,7 +265,7 @@ d initalize all radios before using any of them to avoid interfering with the SP
   A7105_WriteReg(radio,A7105_01_MODE_CONTROL, (byte)0x63);
   
   //Set FIFO mode (instead of direct mode)
-  A7105_WriteReg(radio,A7105_03_FIFOI, (byte)0x0f);
+  A7105_WriteReg(radio,A7105_03_FIFO_I, (byte)0x0f);
   
   //Set the clock to be the crystal on the xl7501 breakout
   A7105_WriteReg(radio,A7105_0D_CLOCK, (byte)0x05);
@@ -408,7 +414,7 @@ A7105_Status_Code A7105_Easy_Listen_For_Packets(struct A7105* radio,
   //Send the length of the packet we're expecting (len - 1 since it's an end-pointer)
   //TODO: Maybe we can make this optional so we don't have to do it for 
   //every packet?
-  A7105_WriteReg(radio, A7105_03_FIFOI, (byte)(length-1));
+  A7105_WriteReg(radio, A7105_03_FIFO_I, (byte)(length-1));
   
 
   //Put radio2 in RX mode so it will hear the packet we're sending with radio1
