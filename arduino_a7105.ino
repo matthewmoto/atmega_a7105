@@ -45,7 +45,7 @@ A7105 radio2;
 
 // the setup function runs once when you press reset or power the board
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
 
   Serial.println("Starting...");
 
@@ -58,8 +58,8 @@ void setup() {
   digitalWrite(RECORD,LOW);
 
 
-  A7105_Status_Code success = A7105_Easy_Setup_Radio(&radio1,RADIO1_SELECT_PIN, RADIO1_WTR_PIN, RADIO_IDS, A7105_DATA_RATE_10Kbps,0,A7105_TXPOWER_100mW);
-  A7105_Status_Code success2 = A7105_Easy_Setup_Radio(&radio2,RADIO2_SELECT_PIN, RADIO2_WTR_PIN, RADIO_IDS, A7105_DATA_RATE_10Kbps,0,A7105_TXPOWER_100mW);
+  A7105_Status_Code success = A7105_Easy_Setup_Radio(&radio1,RADIO1_SELECT_PIN, RADIO1_WTR_PIN, RADIO_IDS, A7105_DATA_RATE_250Kbps,0,A7105_TXPOWER_150mW,1,1);
+  A7105_Status_Code success2 = A7105_Easy_Setup_Radio(&radio2,RADIO2_SELECT_PIN, RADIO2_WTR_PIN, RADIO_IDS, A7105_DATA_RATE_250Kbps,0,A7105_TXPOWER_150mW,1,1);
 
   Serial.print("Radio 1 Init: ");
   Serial.println(success == A7105_STATUS_OK);
@@ -71,13 +71,13 @@ void setup() {
 
 void send_uint32_packet(struct A7105* radio, uint32_t val)
 {
-  byte data[8];
-  memset(data,0,8);
+  byte data[64];
+  memset(data,0,64);
   data[0] = (val >> 24) & 0xff;
   data[1] = (val >> 16) & 0xff;
   data[2] = (val >> 8) & 0xff;
   data[3] = (val & 0xff);
-  A7105_WriteData(radio,data,8);
+  A7105_WriteData(radio,data,64);
 }
 
 void recv_uint32_packet(struct A7105* radio, uint32_t* val)
@@ -96,7 +96,7 @@ int bounce_packet(struct A7105* src, struct A7105* dest, uint32_t value)
 {
   //Put dest in RX mode so it will hear the packet we're sending with src (8 byte packets since it's the smallest that will
   //fit a 4 byte uint32_t we're pinging around)
-  A7105_Easy_Listen_For_Packets(dest,8);
+  A7105_Easy_Listen_For_Packets(dest,64);
 
   if (A7105_CheckRXWaiting(dest) == A7105_RX_DATA_WAITING)
   {

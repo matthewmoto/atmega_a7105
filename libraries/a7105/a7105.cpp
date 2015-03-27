@@ -159,13 +159,27 @@ A7105_Status_Code A7105_ReadData(struct A7105* radio, byte *dpbuffer, byte len)
       _A7105_INTERRUPT_COUNTS[radio->_INTERRUPT_PIN] = A7105_INT_NULL;
     }
 
+
     //Reset the FIFO read pointer
     A7105_Strobe(radio, A7105_RST_RDPTR); 
 
     for(int i = 0; i < len; i++) {
         dpbuffer[i] = A7105_ReadReg(radio, A7105_05_FIFO_DATA);
     }
- 
+
+    //check for CRC/FEC (if it's enabled)
+    //NOTE: We read the data either way since the user
+    //can decide if they have use for the data
+    if (radio->_USE_CRC || radio->_USE_FEC)
+    {
+      byte crc_fec_check = A7105_ReadReg(radio, A7105_00_MODE);
+      if ((crc_fec_check & CRC_CHECK_MASK) ||
+          (crc_fec_check & FEC_CHECK_MASK))
+      {
+        return A7105_RX_DATA_INTEGRITY_ERROR;
+      }
+    }
+
     return A7105_STATUS_OK;
 }
 
@@ -183,6 +197,18 @@ A7105_Status_Code A7105_CheckRXWaiting(struct A7105* radio)
 
     else
     {
+      //check for CRC/FEC only if it's enabled (otherwise we're just wasting cycles)
+      if (radio->_USE_CRC || radio->_USE_FEC)
+      {
+        byte crc_fec_check = A7105_ReadReg(radio, A7105_00_MODE);
+        if ((crc_fec_check & CRC_CHECK_MASK) ||
+            (crc_fec_check & FEC_CHECK_MASK))
+        {
+          return A7105_RX_DATA_INTEGRITY_ERROR;
+        }
+      }
+
+
       return  A7105_RX_DATA_WAITING;
     }
   }
@@ -238,7 +264,15 @@ void A7105_Strobe(struct A7105* radio, enum A7105_State state)
 }
 
 
-A7105_Status_Code A7105_Easy_Setup_Radio(struct A7105* radio, int cs_pin, int wtr_pin, uint32_t radio_id, A7105_DataRate data_rate, byte channel, A7105_TxPower power)
+A7105_Status_Code A7105_Easy_Setup_Radio(struct A7105* radio, 
+                                         int cs_pin, 
+                                         int wtr_pin, 
+                                         uint32_t radio_id, 
+                                         A7105_DataRate data_rate, 
+                                         byte channel, 
+                                         A7105_TxPower power,
+                                         int use_CRC,
+                                         int use_FEC)
 {
 
   /*
@@ -300,7 +334,21 @@ d initalize all radios before using any of them to avoid interfering with the SP
   //from the datasheet, we *should* be able to remove this.
   A7105_WriteReg(radio,A7105_1C_RX_GAIN_IV, (byte)0x0A);
 
-  //This register controls CRC and filtering options. It sets:
+  //Store the CRC/FEC settings and calculate the register value to push below
+  byte default_code = 0x07;
+  radio->_USE_FEC = 0;
+  radio->_USE_CRC = 0;
+  if (use_CRC)
+  {
+    radio->_USE_CRC = 1;
+    default_code |= CRC_ENABLE_MASK;
+  }
+  if (use_FEC)
+  {
+    radio->_USE_FEC = 1;
+    default_code |= FEC_ENABLE_MASK;
+  }
+   //This register controls CRC and filtering options. It sets:
   //  * Data whitening (crypto) off
   //  * FEC Select off (Foward Error Correction)
   //  * Disables CRC Select
@@ -308,7 +356,8 @@ d initalize all radios before using any of them to avoid interfering with the SP
   //  * Set preamble length to 4 bytes (alternating 0101010 or 1010101 to identify packets)
   //  TODO: Experiment with enabling CRC since we are more concerned
   //        with correctness than latency...
-  A7105_WriteReg(radio,A7105_1F_CODE_I, (byte)0x07);
+ A7105_WriteReg(radio,A7105_1F_CODE_I, default_code);
+
   //This register sets more coding options:
   //  * ID code error tolerance of 1-bit (recommended value)
   //  * Preamble pattern detection length (16-bits, recommended for our 2-125KHz)

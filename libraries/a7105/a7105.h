@@ -44,7 +44,16 @@
 
 #define A7105_ENABLE_4WIRE 0x19 //GPIO register value to make the pin a MISO pin (for 4-wire SPI comms)
 #define A7105_GPIO_WTR 0x01 //Code to set a GIO pin to do WTR activity (be high during transmit/receive and low otherwise)
-#define A7105_SPI_CLOCK 500000 //Clock rate for SPI communications with A7105's
+
+//NOTE: This is 1/2 the maximum value specified in the datasheet. 10000000 was 
+//      giving me issues with my ghetto breadboard test harness so feel free to alter 
+//      this if you wish, but be careful pushing it too fast.
+#define A7105_SPI_CLOCK 5000000 //Clock rate for SPI communications with A7105's
+
+#define CRC_ENABLE_MASK 0x08 //Mask to enable CRC on register 1F (code register 1)
+#define FEC_ENABLE_MASK 0x10 //Mask to enable FEC on register 1F (code register 1)
+#define CRC_CHECK_MASK 0x20 //check CRC bit on register 00 (mode)
+#define FEC_CHECK_MASK 0x40 
 
 #define A7105_HIGHEST_CHANNEL 0xA8 //Defined in datasheet pg. 59
 
@@ -62,6 +71,7 @@ enum A7105_Status_Code{
   A7105_INVALID_CHANNEL,
   A7105_INVALID_FIFO_LENGTH,
   A7105_RX_DATA_WAITING,
+  A7105_RX_DATA_INTEGRITY_ERROR,  
   A7105_NO_DATA,
   A7105_NO_WTR_INTERRUPT_SET,
   A7105_BUSY,
@@ -180,6 +190,8 @@ struct A7105
   int _STATE; //Uses the values of the A7105 Strobe states for tracking interrupts and such 
   int _INTERRUPT_PIN;  //The pin mapped to GIO2 that get's interrupts on TX/RX (used for tracking data being available)
                        //-1 if no interrupt pin specified 
+  int _USE_CRC; //0/1 if CRC is disabled/enabled on the radio
+  int _USE_FEC; //0/1 if FEC is disabled/enabled on the radio
 };
 
 //Basic Hardware Functions (basically hardware calls)
@@ -270,6 +282,11 @@ A7105_Status_Code A7105_ReadData:
     * A8105_STATUS_OK: If there was data avaiable and waiting *OR*
                        if no interrupt pin was set, it will just take
                        whatever is sitting in the radio FIFO register.
+    * A7105_RX_DATA_INTEGRITY_ERROR: If CRC/FEC or both are enabled on the radio
+                                     and we detect a fault with either, this is 
+                                     returned. It means there *was* data, but it 
+                                     has been corrupted.  The data is *still* read
+                                     into 'dpbuffer' but do *NOT* trust it's integrity.
 */
 A7105_Status_Code A7105_ReadData(struct A7105* radio, byte *dpbuffer, byte len);
 
@@ -289,6 +306,10 @@ A7105_Status_Code A7105_CheckRXWaiting:
     A7105_NO_DATA: If interrupt pin was configured, but no data is waiting to be read
     A7105_RX_DATA_WAITING: If interrupt pin was configured and data is waiting to be read
     A7105_NO_WTR_INTERRUPT_SET: If no interrupt pin was configured.
+    A7105_RX_DATA_INTEGRITY_ERROR: If CRC/FEC or both are enabled on the radio
+                                     and we detect a fault with either, this is 
+                                     returned. It means there *was* data, but it 
+                                     has been corrupted. 
  */
 A7105_Status_Code A7105_CheckRXWaiting(struct A7105* radio);
 
@@ -356,6 +377,11 @@ A7105_Status_Code A7105_Setup_Radio:
   * channel: 0 - A8. The channel to use for communications. 
   * power: The power setting to use for TX. Higher is better but 
            make sure you have a big enough power supply for this.
+  * use_CRC: 0 or 1 to disable/enable the use of CRC for transmitted packets.
+             This is all done on the A7105 and affects transmission time.
+  * use_FEC: 0 or 1 to disable/enable the use of Foward Error Correction 
+             (that is 1 bit auto correction for every 4-bit nibble) transmitted.
+             This is done on the A7105 chip and affects transmission time.
 
   Side Effects/Notes:
     Be sure to call this method from the setup() function since
@@ -383,7 +409,9 @@ A7105_Status_Code A7105_Easy_Setup_Radio(struct A7105* radio,
                                     uint32_t radio_id, 
                                     A7105_DataRate data_rate,
                                     byte channel,
-                                    A7105_TxPower power);
+                                    A7105_TxPower power,
+                                    int use_CRC,
+                                    int use_FEC);
 /*
 A7105_Status_Code A7105_Easy_Listen_For_Packets:
   * radio: Pointer to a valid A7105 structure for state tracking. This 
