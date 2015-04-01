@@ -81,13 +81,16 @@ A7105_Status_Code A7105_WriteData(struct A7105* radio, byte *dpbuffer, byte len)
     return A7105_INVALID_FIFO_LENGTH;
   }
 
+  //Ensure we're not in RX mode (go back to standby)
+  A7105_Strobe(radio,A7105_STANDBY);
+
   //Make sure we aren't in the middle of a TX right now (only works
   //if a WTR pin was set, otherwise just hope for the best)
   if (radio->_INTERRUPT_PIN > 0)
   {
     if ( _A7105_INTERRUPT_COUNTS[radio->_INTERRUPT_PIN] == A7105_INT_IGNORE_ONE)
     {
-    return A7105_BUSY;
+      return A7105_BUSY;
     }
 
     //If we have interrupts enabled (and arent busy), ignore the next one
@@ -159,7 +162,6 @@ A7105_Status_Code A7105_ReadData(struct A7105* radio, byte *dpbuffer, byte len)
       _A7105_INTERRUPT_COUNTS[radio->_INTERRUPT_PIN] = A7105_INT_NULL;
     }
 
-
     //Reset the FIFO read pointer
     A7105_Strobe(radio, A7105_RST_RDPTR); 
 
@@ -181,6 +183,14 @@ A7105_Status_Code A7105_ReadData(struct A7105* radio, byte *dpbuffer, byte len)
     }
 
     return A7105_STATUS_OK;
+}
+
+A7105_Status_Code A7105_CheckTXFinished(struct A7105* radio)
+{
+  if (A7105_ReadReg(radio, A7105_00_MODE) & 0x01)
+    return  A7105_BUSY;
+
+  return A7105_STATUS_OK;
 }
 
 A7105_Status_Code A7105_CheckRXWaiting(struct A7105* radio)
@@ -300,6 +310,9 @@ d initalize all radios before using any of them to avoid interfering with the SP
   
   //Set FIFO mode (instead of direct mode)
   A7105_WriteReg(radio,A7105_03_FIFO_I, (byte)0x0f);
+
+  //Ensure we're using Easy FIFO mode (FPM, PSA both are zeroed)
+  A7105_WriteReg(radio,A7105_04_FIFO_II, (byte)0x00);
   
   //Set the clock to be the crystal on the xl7501 breakout
   A7105_WriteReg(radio,A7105_0D_CLOCK, (byte)0x05);
@@ -460,14 +473,25 @@ A7105_Status_Code A7105_Easy_Listen_For_Packets(struct A7105* radio,
     return A7105_INVALID_FIFO_LENGTH;
   }
 
+  //DEBUG (not sure if this stanza is totally necessary yet)
+  A7105_Strobe(radio,A7105_STANDBY);
+
+  if (radio->_INTERRUPT_PIN > 0)
+  {
+    //clear the interrupt counter since we're reading
+    _A7105_INTERRUPT_COUNTS[radio->_INTERRUPT_PIN] = A7105_INT_NULL;
+  }
+  A7105_Strobe(radio,A7105_RST_WRPTR);
+  //DEBUG
+
   //Send the length of the packet we're expecting (len - 1 since it's an end-pointer)
   //TODO: Maybe we can make this optional so we don't have to do it for 
   //every packet?
   A7105_WriteReg(radio, A7105_03_FIFO_I, (byte)(length-1));
-  
 
   //Put radio2 in RX mode so it will hear the packet we're sending with radio1
   A7105_Strobe(radio,A7105_RX);
+
 
   return A7105_STATUS_OK;
 }

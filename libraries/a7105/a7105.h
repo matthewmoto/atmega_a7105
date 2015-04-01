@@ -194,6 +194,8 @@ struct A7105
   int _USE_FEC; //0/1 if FEC is disabled/enabled on the radio
 };
 
+void mm_debug(struct A7105* radio);
+
 //Basic Hardware Functions (basically hardware calls)
 
 /*
@@ -279,7 +281,7 @@ A7105_Status_Code A7105_ReadData:
   Returns:
     * A7105_NO_DATA: If an interrupt wtr pin was specified for the radio and data was detected via that interrupt pin.
     * A7105_INVALID_FIFO_LENGTH: If 'len' was not a valid size to read (<=64 bytes).
-    * A8105_STATUS_OK: If there was data avaiable and waiting *OR*
+    * A7105_STATUS_OK: If there was data avaiable and waiting *OR*
                        if no interrupt pin was set, it will just take
                        whatever is sitting in the radio FIFO register.
     * A7105_RX_DATA_INTEGRITY_ERROR: If CRC/FEC or both are enabled on the radio
@@ -290,6 +292,23 @@ A7105_Status_Code A7105_ReadData:
 */
 A7105_Status_Code A7105_ReadData(struct A7105* radio, byte *dpbuffer, byte len);
 
+/*
+A7105_Status_Code A7105_CheckTXFinished:
+  * radio: Pointer to a valid A7105 structure for state tracking. This 
+           should be a radio that was either previously initialized with
+           A7105_Easy_Setup_Radio() or another function that set up and 
+           calibrated all the registers for the radio.
+
+  This function checks if the TX data previously sent has finished transmission.
+  This checks the MODE (00h) register of the radio and doesn't depend on 
+  interrupts to work.
+
+  Returns:
+    A7105_STATUS_OK: If the radio TRX circuitry is idle (i.e. done sending)
+    A7105_BUSY: If the radio is still sending data
+*/
+
+A7105_Status_Code A7105_CheckTXFinished(struct A7105* radio);
 
 /*
 A7105_Status_Code A7105_CheckRXWaiting:

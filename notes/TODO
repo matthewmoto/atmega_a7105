@@ -1,0 +1,14 @@
+* Add notes to documentation about repeating JOIN packets regardless of whether
+  we've repeated them before (the special case we added).
+
+* Propagate the callback syntax changes (adding extra parameter) to the arguments
+  of all the other entry-point functions.
+
+* Add notes to docs about running multiple radio nodes requiring you to specify
+  your own callback or only the the requesting radio will process any network
+  traffic during the request.
+
+* Start thinking about ways to gaurantee uniqueness for the unique_id's
+
+* Flesh out the remainder of the PACKET types and requests once the Mesh is
+  working with JOIN, PING, CONFLICT_NAME and GET_NUM_REGISTERS
