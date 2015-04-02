@@ -1,7 +1,3 @@
-* Add notes to docs about running multiple radio nodes requiring you to specify
-  your own callback or only the the requesting radio will process any network
-  traffic during the request.
-
 * Start thinking about ways to gaurantee uniqueness for the unique_id's
   Idea: Look for packets with a different node-id and the same unique-ID and 
         send a new type of conflict packet.

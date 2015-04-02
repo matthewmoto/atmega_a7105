@@ -37,7 +37,10 @@
 
 //Time after which we will assume we've heard from everybody
 //on the mesh
-#define A7105_MESH_PING_TIMEOUT 1000 
+#define A7105_MESH_PING_TIMEOUT 2000 
+
+//Time after which directed requests will be considered timed-out
+#define A7105_MESH_REQUEST_TIMEOUT 3000 
 
 enum A7105_Mesh_State{
   A7105_Mesh_NOT_JOINED,
@@ -86,6 +89,7 @@ struct A7105_Mesh
   byte num_registers; //number of registers
 
   //////// Request Tracking //////////
+  byte packet_cache[A7105_MESH_PACKET_SIZE];
   unsigned long request_sent_time;
   byte target_node_id;
   uint16_t target_unique_id;
@@ -110,7 +114,8 @@ struct A7105_Mesh
 
   ///// Client Data Storage Cache //////
   byte num_registers_cache; 
-  byte packet_cache[A7105_MESH_PACKET_SIZE];
+  byte responder_node_id; 
+  uint16_t responder_unique_id; 
   void (*operation_callback)(struct A7105_Mesh*,A7105_Mesh_Status);
   A7105_Mesh_Status blocking_operation_status; //Used to store the return status during blocking interface usage
 
@@ -222,7 +227,6 @@ A7105_Mesh_Status A7105_Mesh_Update(struct A7105_Mesh* node);
 
       Returns:
         * A7105_Mesh_STATUS_OK on success or if ping_finished_callback is NULL.
-        * A7105_Mesh_TIMEOUT if the operation finished without getting any PONG responses from other nodes.
         * A7105_Mesh_NOT_ON_MESH if 'node' is not on a mesh
         * A7105_Mesh_BUSY if 'node' is currently performing a different operation
 */
@@ -237,21 +241,36 @@ void _A7105_Mesh_Update_Ping(struct A7105_Mesh* node);
     A7105_Mesh_Status A7105_Mesh_GetNumRegisters(struct A7105_Mesh* node, byte node_id, void (*get_num_registers_callback)(A7105_Mesh_Status))
       * node: Must be a node successfully initialized with A7105_Mesh_Initialize() and the node must be successfully
               joined to a mesh.
+      * node_id: the node ID to query
+      * target_unique_id: (Optional) filter responses with unique ID to ensure we don't get 
+                                     responses from a node that usurped node_id from the last
+                                     request to now.
       * get_num_registers_callback: The function called when the GET_NUM_REGISTERS operation completes or times out. If this is NULL,
                                     A7105_Mesh_GetNumRegisters will use an internal callback and block until the operation completes
                                     or times out.
 
       Side-Effects/Notes: If this method completes successfully, the number of registers will be stored in node->num_registers_cache.
                           Otherwise, an error status will be returned or sent to the callback (if specified).
+                          Also, responder node-ID and unique-ID will be stored in node->responder_node_id and 
+                          resonder->responder_unique_id respectively
 
       Returns:
         * A7105_Mesh_STATUS_OK on success or if get_num_registers_callback is NULL.
         * A7105_Mesh_TIMEOUT if the operation finished without getting any response from the target node.
+        * A7105_Mesh_BUSY if 'node' is currently performing a different operation
+        
 */
 A7105_Mesh_Status A7105_Mesh_GetNumRegisters(struct A7105_Mesh* node, 
                                              byte node_id, 
-                                              void (*get_num_registers_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status)); 
+                                             void (*get_num_registers_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status)); 
+A7105_Mesh_Status A7105_Mesh_GetNumRegisters(struct A7105_Mesh* node, 
+                                             byte node_id, 
+                                             uint16_t target_unique_id,
+                                             void (*get_num_registers_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status)); 
 
+void _A7105_Mesh_Handle_GetNumRegisters(struct A7105_Mesh* node);
+void _A7105_Mesh_Handle_NumRegisters(struct A7105_Mesh* node);
+void _A7105_Mesh_Update_GetNumRegisters(struct A7105_Mesh* node);
 
 /*
     A7105_Mesh_Status A7105_Mesh_GetRegisterName(struct A7105_Mesh* node, byte node_id, byte reg_index, uint16_t filter_unique_id, void (*get_register_name_callback)(A7105_Mesh_Status))
@@ -277,6 +296,7 @@ A7105_Mesh_Status A7105_Mesh_GetNumRegisters(struct A7105_Mesh* node,
         * A7105_Mesh_STATUS_OK on success or if get_num_registers_callback is NULL.
         * A7105_Mesh_INVALID_REGISTER_INDEX if the target register doesn't serve a register with the specified index.
         * A7105_Mesh_TIMEOUT if the operation finished without getting any response from the target node.
+        * A7105_Mesh_BUSY if 'node' is currently performing a different operation
 */
 A7105_Mesh_Status A7105_Mesh_GetRegisterName(struct A7105_Mesh* node, 
                                              byte node_id, 
@@ -305,6 +325,7 @@ A7105_Mesh_Status A7105_Mesh_GetRegisterName(struct A7105_Mesh* node,
       Returns:
         * A7105_Mesh_STATUS_OK on success or if get_num_registers_callback is NULL.
         * A7105_Mesh_TIMEOUT if the operation finished without getting any response from the target node.
+        * A7105_Mesh_BUSY if 'node' is currently performing a different operation
 */
 A7105_Mesh_Status A7105_Mesh_GetRegister(struct A7105_Mesh* node, 
                                          byte* register_name, 
@@ -334,6 +355,7 @@ A7105_Mesh_Status A7105_Mesh_GetRegister(struct A7105_Mesh* node,
       Returns:
         * A7105_Mesh_STATUS_OK on success or if get_num_registers_callback is NULL.
         * A7105_Mesh_TIMEOUT if the operation finished without getting any response from the target node.
+        * A7105_Mesh_BUSY if 'node' is currently performing a different operation
 */
     A7105_Mesh_Status A7105_Mesh_SetRegister(struct A7105_Mesh* node, 
                                              byte* register_name, 
@@ -343,6 +365,29 @@ A7105_Mesh_Status A7105_Mesh_GetRegister(struct A7105_Mesh* node,
                                              void (*set_register_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status)); 
 
 //////////////////////// Utility Functions ///////////////////////
+/*
+  A7105_Get_Next_Present_Node:
+    * presence_table: The bitmask table to use for node presence (32 byte, 255 bit byte array)
+    * start: the node number to start (non-inclusive) Use 0 to start at the beginning.
+
+    Returns: The node-id of the next node (after 'start') present on the mesh or 0 if no more nodes
+             were found.
+
+  This utility function can be used to iterate over a presence table and get every node ID. Simply 
+  start at 0 and pass the last returned ID on each iteration until 0 is returned.
+*/
+byte A7105_Get_Next_Present_Node(byte* presence_table, byte start);
+
+/*
+  _A7105_Mesh_Is_Node_Idle:
+    * node: a node structure (intiailized)
+  
+  Returns:
+    A7105_Mesh_NOT_ON_MESH: If the node is not connected to a mesh
+    A7105_Mesh_BUSY: If the node is currently performing an operation
+    A7105_Mesh_STATUS_OK: If the node is idle and on a mesh.
+*/
+A7105_Mesh_Status _A7105_Mesh_Is_Node_Idle(struct A7105_Mesh* node);
 
 /*
   void _A7105_Mesh_Update_Repeats:

@@ -328,6 +328,7 @@ A7105_Mesh_Status A7105_Mesh_Update(struct A7105_Mesh* node)
   _A7105_Mesh_Update_Ping(node);
 
   //Update GET_NUM_REGISTERS activity 
+  _A7105_Mesh_Update_GetNumRegisters(node);
 
   //Update GET_REGISTER_NAME activity 
 
@@ -349,13 +350,10 @@ A7105_Mesh_Status A7105_Mesh_Ping(struct A7105_Mesh* node,
                                   void (*ping_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status))
 {
   //Check our status (make sure we are on a mesh and not busy)
-  if (node->state == A7105_Mesh_JOINING ||
-      node->state == A7105_Mesh_NOT_JOINED)
-    return A7105_Mesh_NOT_ON_MESH;
-
-  if (node->state != A7105_Mesh_IDLE)
-    return A7105_Mesh_BUSY;
-
+  A7105_Mesh_Status ret;
+  if ((ret = _A7105_Mesh_Is_Node_Idle(node)) != A7105_Mesh_STATUS_OK)
+    return ret;
+  
   //Update our state
   node->state = A7105_Mesh_PING;
   node->target_node_id = 0;
@@ -386,7 +384,6 @@ A7105_Mesh_Status A7105_Mesh_Ping(struct A7105_Mesh* node,
 
   //Otherwise just return an OK status
   return A7105_Mesh_STATUS_OK;
-
 }
 
 void _A7105_Mesh_Handle_Ping(struct A7105_Mesh* node)
@@ -425,8 +422,6 @@ void _A7105_Mesh_Update_Ping(struct A7105_Mesh* node)
   if (node->state == A7105_Mesh_PING &&
       millis() - node->request_sent_time > A7105_MESH_PING_TIMEOUT)
   {
-    node->state = A7105_Mesh_IDLE;
-
     //NUKEME
     int num_nodes = 0;
     for (int x = 1;x<256;x++)
@@ -435,18 +430,141 @@ void _A7105_Mesh_Update_Ping(struct A7105_Mesh* node)
         num_nodes++;
     }
 
-
     DebugHeader(node);
     Serial.print("Finished ping, found ");
     Serial.print(num_nodes);
     Serial.println(" other nodes");
+
+    node->state = A7105_Mesh_IDLE;
+    node->operation_callback(node, A7105_Mesh_STATUS_OK);
+  }
+}
+
+A7105_Mesh_Status A7105_Mesh_GetNumRegisters(struct A7105_Mesh* node,
+                                             byte node_id,
+                                             void (*get_num_registers_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status))
+{
+  return A7105_Mesh_GetNumRegisters(node, node_id, 0,get_num_registers_finished_callback);
+}
+A7105_Mesh_Status A7105_Mesh_GetNumRegisters(struct A7105_Mesh* node,
+                                             byte node_id,
+                                             uint16_t target_unique_id,
+                                             void (*get_num_registers_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status))
+{
+  //Make sure we're idle on a mesh
+  A7105_Mesh_Status ret;
+  if ((ret = _A7105_Mesh_Is_Node_Idle(node)) != A7105_Mesh_STATUS_OK)
+    return ret;
+
+  //Update our state and target filters
+  node->state = A7105_Mesh_GET_NUM_REGISTERS;
+  node->target_node_id = node_id; //only read responses from node_id
+  node->target_unique_id = target_unique_id; //filter (optional) unique ID 
+
+  //Set our completed callback
+  _A7105_Mesh_Prep_Finishing_Callback(node,
+                                      get_num_registers_finished_callback,
+                                      _blocking_op_finished);
+
+  //Prep and send the first GET_NUM_REGISTERS Packet
+  _A7105_Mesh_Prep_Packet_Header(node, A7105_MESH_PKT_GET_NUM_REGISTERS);
+  node->packet_cache[A7105_MESH_PACKET_TARGET_ID] = node_id;
+  _A7105_Mesh_Send_Request(node);
+    
+  //If no callback was specified, block until we get a status value
+  if (get_num_registers_finished_callback == NULL)
+  {
+    while (node->blocking_operation_status == A7105_Mesh_NO_STATUS)
+      A7105_Mesh_Update(node);
+
+    return node->blocking_operation_status;
+  }
+
+  //Otherwise just return an OK status
+  return A7105_Mesh_STATUS_OK;
+}
+
+void _A7105_Mesh_Handle_GetNumRegisters(struct A7105_Mesh* node)
+{
+  //If we're on a mesh and we see a GET_NUM_REGISTERS request
+  //and it's addressed to us
+  if (node->state != A7105_Mesh_NOT_JOINED &&
+      node->state != A7105_Mesh_JOINING &&
+      _A7105_Mesh_Filter_Packet(node,A7105_MESH_PKT_GET_NUM_REGISTERS,true) &&
+      node->packet_cache[A7105_MESH_PACKET_TARGET_ID] == node->node_id)
+  {
+    //Mark the request as handled and push back a NUM_REGISTERS packet
+    _A7105_Mesh_Handling_Request(node, node->packet_cache);
+    _A7105_Mesh_Prep_Packet_Header(node, A7105_MESH_PKT_NUM_REGISTERS);
+    node->packet_cache[A7105_MESH_PACKET_DATA_START] = node->num_registers;
+    _A7105_Mesh_Send_Response(node);
+  }
+}
+
+void _A7105_Mesh_Handle_NumRegisters(struct A7105_Mesh* node)
+{
+  //If we sent a GET_NUM_REGISTERS, and see a NUM_REGISTERS come back
+  //from our target (Filter_Packet handles that part)
+  if (node->state == A7105_Mesh_GET_NUM_REGISTERS &&
+      _A7105_Mesh_Filter_Packet(node,A7105_MESH_PKT_NUM_REGISTERS,false))
+  {
+
+
+    //Update the num registers cache
+    node->num_registers_cache = node->packet_cache[A7105_MESH_PACKET_DATA_START];
+
+    //Record the responder info
+    node->responder_node_id =node->packet_cache[A7105_MESH_PACKET_NODE_ID]; 
+    node->responder_unique_id = A7105_Util_Get_Pkt_Unique_Id(node->packet_cache);
+
+    //Update our status back to IDLE
+    node->state = A7105_Mesh_IDLE;
+    node->operation_callback(node, A7105_Mesh_STATUS_OK);
+  }
+
+}
+
+void _A7105_Mesh_Update_GetNumRegisters(struct A7105_Mesh* node)
+{
+  if (node->state == A7105_Mesh_GET_NUM_REGISTERS &&
+      millis() - node->request_sent_time > A7105_MESH_REQUEST_TIMEOUT)
+  {
+    //Update our status back to IDLE and mark the request as a timeout
+    node->state = A7105_Mesh_IDLE;
+    node->operation_callback(node, A7105_Mesh_TIMEOUT);
   }
 }
 
 
 
-
 //////////////////////// Utility Functions ///////////////////////
+      
+byte A7105_Get_Next_Present_Node(byte* presence_table, byte start)
+{
+  if (start == 0xFF)
+    return 0;
+
+  for (byte x = start+1; x<=0xFF;x++)
+    if (presence_table[x/8] & (byte)(1<<(x%8)))
+      return x;
+
+  return 0;
+}
+
+A7105_Mesh_Status _A7105_Mesh_Is_Node_Idle(struct A7105_Mesh* node)
+{
+ if (node->state == A7105_Mesh_JOINING ||
+     node->state == A7105_Mesh_NOT_JOINED)
+    return A7105_Mesh_NOT_ON_MESH;
+
+
+  //Ensure we're in a good state to handle this
+  if (node->state != A7105_Mesh_IDLE)
+    return A7105_Mesh_BUSY; 
+
+  return A7105_Mesh_STATUS_OK;
+} 
+
 //Push a packet from the packet_cache to the end of the repeat
 //ring buffer
 void _A7105_Mesh_Append_Repeat(struct A7105_Mesh* node)
@@ -533,7 +651,21 @@ void _A7105_Mesh_Cache_Packet_For_Repeat(struct A7105_Mesh* node)
   //Don't repeat if this was a request addressed to us
   if ((node->packet_cache[A7105_MESH_PACKET_TYPE] == A7105_MESH_PKT_GET_NUM_REGISTERS ||
       node->packet_cache[A7105_MESH_PACKET_TYPE] == A7105_MESH_PKT_GET_REGISTER_NAME) &&
-      node->packet_cache[A7105_MESH_PACKET_NODE_ID] == node->node_id)
+      node->packet_cache[A7105_MESH_PACKET_TARGET_ID] == node->node_id)
+    return;
+
+  //Don't repeat if this packet is a response for our latest *directed* request
+  //(GET_NUM_REGISTERS is a directed query)
+  if (node->state == A7105_Mesh_GET_NUM_REGISTERS &&
+      node->packet_cache[A7105_MESH_PACKET_TYPE] == A7105_MESH_PKT_NUM_REGISTERS &&
+      node->packet_cache[A7105_MESH_PACKET_NODE_ID] == node->target_node_id &&
+      (node->target_unique_id == 0 || A7105_Util_Get_Pkt_Unique_Id(node->packet_cache) == node->target_unique_id))
+    return;
+  //(ditto for GET_REGISTER_NAME)       
+  if (node->state == A7105_Mesh_GET_REGISTER_NAME &&
+      node->packet_cache[A7105_MESH_PACKET_TYPE] == A7105_MESH_PKT_REGISTER_NAME &&
+      node->packet_cache[A7105_MESH_PACKET_NODE_ID] == node->target_node_id &&
+      (node->target_unique_id == 0 || A7105_Util_Get_Pkt_Unique_Id(node->packet_cache) == node->target_unique_id))
     return;
 
   //Don't repeat if this was a request for one of our registers
@@ -739,6 +871,8 @@ void _A7105_Mesh_Handle_RX(struct A7105_Mesh* node)
   _A7105_Mesh_Handle_Deferred_Joining(node);
 
   //Update the repeat cache with the new packet
+  //NOTE: This method should be before any of the Handle_ stuff for requests like GetNumRegisters 
+  //      since we use the node state to filter out some response packets (not all)
   _A7105_Mesh_Cache_Packet_For_Repeat(node);
 
   //Handle any PING requests
@@ -746,7 +880,12 @@ void _A7105_Mesh_Handle_RX(struct A7105_Mesh* node)
 
   //Handle any PONG responses
   _A7105_Mesh_Handle_Pong(node);
-  
+
+  //Handle GET_NUM_REGISTERS requests
+  _A7105_Mesh_Handle_GetNumRegisters(node);
+
+  //Handle NUM_REGISTERS responses
+  _A7105_Mesh_Handle_NumRegisters(node);
 }
 
 uint16_t A7105_Util_Get_Pkt_Unique_Id(byte* packet)

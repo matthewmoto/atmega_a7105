@@ -111,6 +111,25 @@ void join_finished(struct A7105_Mesh* node, A7105_Mesh_Status status)
   Serial.println(status);
 }
 
+void get_num_registers_finished(struct A7105_Mesh* node, A7105_Mesh_Status status)
+{
+  Serial.print("Node ");
+  Serial.print(node->unique_id,HEX);
+  Serial.print(" finished GET_NUM_REGISTERS");
+  Serial.print(" Status: ");
+  Serial.println(status);
+
+  if (status == A7105_Mesh_STATUS_OK)
+  {
+    Serial.print("Response from node: ");
+    Serial.print(node->responder_unique_id,HEX);
+    Serial.print(" (");
+    Serial.print(node->responder_node_id);
+    Serial.print("): ");
+    Serial.println(node->num_registers_cache);
+  }
+}
+
 void ping_finished(struct A7105_Mesh* node, A7105_Mesh_Status status)
 {
   Serial.print("Node ");
@@ -118,8 +137,15 @@ void ping_finished(struct A7105_Mesh* node, A7105_Mesh_Status status)
   Serial.print(" finished PING");
   Serial.print(" Status: ");
   Serial.println(status);
-}
 
+  //Kick off a GET_NUM_REGISTERS for the first found node
+  if (status == A7105_Mesh_STATUS_OK)
+  {
+    byte node_id = A7105_Get_Next_Present_Node(node->presence_table,0);
+    if (node_id != 0)
+      A7105_Mesh_GetNumRegisters(node, node_id, get_num_registers_finished);
+  }
+}
 
 int success = 1;
 int radio2_joined = 0;
@@ -138,6 +164,8 @@ void loop() {
     A7105_Mesh_Ping(&radio1, ping_finished);
     ping_sent = 1;
   }
+
+
 
   A7105_Mesh_Update(&radio1);
   A7105_Mesh_Update(&radio2);
