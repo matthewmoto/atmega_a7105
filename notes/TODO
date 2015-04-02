@@ -17,5 +17,8 @@
 * Flesh out the remainder of the PACKET types and requests once the Mesh is
   working with JOIN, PING, CONFLICT_NAME and GET_NUM_REGISTERS
 
-* After the Mesh is working, look for ways to reduce the size of the 
+* After the Mesh is working with all packet types, look for ways to reduce the size of the 
   generated HEX file, things are starting to get big...
+  * Idea: Most of the _A7105_Mesh_Update_OPNAME functions are really just
+          timouts that set the state back to IDLE. we could make this 
+          a generic function like our _blocking_op_finished.

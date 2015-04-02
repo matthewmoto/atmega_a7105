@@ -12,7 +12,7 @@
 
 //Maximum number of packets to cache for repeating 
 //(kept small to prevent using too much RAM)
-#define A7105_MESH_MAX_REPEAT_CACHE_SIZE 3
+#define A7105_MESH_MAX_REPEAT_CACHE_SIZE 2
 
 //Maximum number of times a packet can be repeated on the mesh
 #define A7105_MESH_MAX_HOP_COUNT 16
@@ -42,6 +42,10 @@
 //Time after which directed requests will be considered timed-out
 #define A7105_MESH_REQUEST_TIMEOUT 3000 
 
+//Debug stuff
+#define putstring(x) SerialPrint_P(PSTR(x))
+void SerialPrint_P(PGM_P str);
+
 enum A7105_Mesh_State{
   A7105_Mesh_NOT_JOINED,
   A7105_Mesh_JOINING,
@@ -57,6 +61,7 @@ enum A7105_Mesh_Status{
   A7105_Mesh_NO_STATUS,
   A7105_Mesh_STATUS_OK,
   A7105_Mesh_TIMEOUT,
+  A7105_Mesh_INVALID_REGISTER_INDEX,
   A7105_Mesh_NOT_ON_MESH,
   A7105_Mesh_BUSY,
   A7105_Mesh_MESH_FULL,
@@ -64,7 +69,6 @@ enum A7105_Mesh_Status{
   A7105_Mesh_RADIO_INIT_ERROR,
   A7105_Mesh_RADIO_CALIBRATION_ERROR,
   A7105_Mesh_RADIO_INVALID_CHANNEL,
-
 };
 
 struct A7105_Mesh_Register
@@ -85,7 +89,7 @@ struct A7105_Mesh
   
   uint16_t random_delay; //used for repeating operations
   
-  A7105_Mesh_Register* registers; //registers we serve
+  struct A7105_Mesh_Register* registers; //registers we serve
   byte num_registers; //number of registers
 
   //////// Request Tracking //////////
@@ -114,6 +118,7 @@ struct A7105_Mesh
 
   ///// Client Data Storage Cache //////
   byte num_registers_cache; 
+  A7105_Mesh_Register register_cache; 
   byte responder_node_id; 
   uint16_t responder_unique_id; 
   void (*operation_callback)(struct A7105_Mesh*,A7105_Mesh_Status);
@@ -288,6 +293,7 @@ void _A7105_Mesh_Update_GetNumRegisters(struct A7105_Mesh* node);
 
       Side-Effects/Notes: If this method completes successfully, the register name returned can be retrived by
                           calling A7105_Mesh_Util_GetRegisterNameBytes() or A7105_Mesh_Util_GetRegisterNameStr().
+                          with node->register_cache.
                           NOTE: These values are stored internally in the A7105_Node structure and will be reset at the next
                           register operation.
                           Otherwise, an error status will be returned or sent to the callback (if specified).
@@ -301,8 +307,17 @@ void _A7105_Mesh_Update_GetNumRegisters(struct A7105_Mesh* node);
 A7105_Mesh_Status A7105_Mesh_GetRegisterName(struct A7105_Mesh* node, 
                                              byte node_id, 
                                              byte reg_index, 
+                                             void (*get_register_name_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status)); 
+
+A7105_Mesh_Status A7105_Mesh_GetRegisterName(struct A7105_Mesh* node, 
+                                             byte node_id, 
+                                             byte reg_index, 
                                              uint16_t filter_unique_id,
                                              void (*get_register_name_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status)); 
+
+void _A7105_Mesh_Handle_GetRegisterName(struct A7105_Mesh* node);
+void _A7105_Mesh_Handle_RegisterName(struct A7105_Mesh* node);
+void _A7105_Mesh_Update_GetRegisterName(struct A7105_Mesh* node);
 
 
 /*
@@ -460,30 +475,24 @@ void _A7105_Mesh_Send_Response(struct A7105_Mesh* node);
 */
 void _A7105_Mesh_Send_Request(struct A7105_Mesh* node);
 
-/*
-  _A7105_Mesh_Prep_Pkt_Register_Name_Value:
-    * packet: the packet to populate (assumed A7105_MESH_PACKET_SIZE length)
-    * reg_name: the buffer containing the register name
-    * reg_name_len: the length of reg_name
-    * reg_val: the buffer containing the register value
-    * reg_val_len: the length of reg_val
-
-    This internal function populates a packet buffer with 
-    register name and value data.
-
-    Returns: 0 if the data was too long for the packet,
-             1 otherwise.
-*/
-byte _A7105_Mesh_Prep_Pkt_Register_Name_Value(byte* packet,
-                                              byte* reg_name,
-                                              byte reg_name_len,
-                                              byte* reg_val,
-                                              byte reg_val_len);
-
 //Returns true if the register name from 'reg' is in packet
 //for GET/SET Register requests only
 byte _A7105_Mesh_Util_Does_Packet_Have_Register(byte* packet,
                                                 struct A7105_Mesh_Register* reg);
+
+void _A7105_Mesh_Util_Register_To_Packet(byte* packet,
+                                         struct A7105_Mesh_Register* reg,
+                                         byte include_value);
+
+//NOTE: if include_value = true, include name is assumed true also
+void _A7105_Mesh_Util_Packet_To_Register(byte* packet,
+                                         struct A7105_Mesh_Register* reg,
+                                         byte include_value);
+
+//Returns length of register name
+//Will return either the whole name or buffer_len -1 bytes (needs to pad a trailing /0)
+byte A7105_Mesh_Util_GetRegisterNameStr(struct A7105_Mesh_Register* reg,char* buffer,int buffer_len);
+
 
 /*
   _A7105_Mesh_Handling_Request:

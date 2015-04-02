@@ -41,10 +41,22 @@ results into the mesh library.
 
 #define PING_TIMEOUT 1500 //time we wait between starting a TX and receiving notification of RX
 
+#define putstring(x) SerialPrint_P(PSTR(x))                             
+void SerialPrint_P(PGM_P str) {                                         
+  for (uint8_t c; (c = pgm_read_byte(str)); str++) Serial.write(c);     
+} 
+
+
 void join_finished(struct A7105_Mesh* node, A7105_Mesh_Status status);
 
 A7105_Mesh radio1;
 A7105_Mesh radio2;
+
+#define RADIO2_NUMREGISTERS 1
+int state = 0;
+byte node_id = 255;
+byte reg_index = 0;
+byte num_registers = 0;
 
 // the setup function runs once when you press reset or power the board
 void setup() {
@@ -79,19 +91,32 @@ void setup() {
   //A7105_Status_Code success = A7105_Easy_Setup_Radio(&radio1,RADIO1_SELECT_PIN, RADIO1_WTR_PIN, RADIO_IDS, A7105_DATA_RATE_250Kbps,0,A7105_TXPOWER_150mW,1,1);
   //A7105_Status_Code success2 = A7105_Easy_Setup_Radio(&radio2,RADIO2_SELECT_PIN, RADIO2_WTR_PIN, RADIO_IDS, A7105_DATA_RATE_250Kbps,0,A7105_TXPOWER_150mW,1,1);
 
-  Serial.print("Radio 1 Init: ");
+  putstring("Radio 1 Init: ");
   Serial.print(success == A7105_Mesh_STATUS_OK);
-  Serial.print(", ID = ");
+  putstring(", ID = ");
   Serial.println(radio1.unique_id,HEX);
   
-  Serial.print("Radio 2 Init: ");
+  putstring("Radio 2 Init: ");
   Serial.print(success2 == A7105_Mesh_STATUS_OK);
-  Serial.print(", ID = ");
+  putstring(", ID = ");
   Serial.println(radio2.unique_id,HEX);
 
 
   //Try to make radio1 join the Mesh
   A7105_Mesh_Join(&radio1, join_finished);
+
+
+  //initialize radio2's registers
+  radio2.registers = (struct A7105_Mesh_Register*)malloc(sizeof(struct A7105_Mesh_Register)*1);
+
+  radio2.registers[0]._name_len = 1;
+  radio2.registers[0]._data_len = 1;
+  radio2.registers[0]._data[0] = 'a';
+  radio2.registers[0]._data[1] = 'A';
+  
+  radio2.num_registers = 1;
+  //radio2.num_registers = RADIO2_NUMREGISTERS;
+   
 }
 
 int freeRam () 
@@ -103,66 +128,137 @@ int freeRam ()
 
 void join_finished(struct A7105_Mesh* node, A7105_Mesh_Status status)
 {
-  Serial.print("Node ");
+  putstring("Node ");
   Serial.print(node->unique_id,HEX);
-  Serial.print(" finished JOIN as ");
+  putstring(" finished JOIN as ");
   Serial.print(node->node_id);
-  Serial.print(" Status: ");
+  putstring(" Status: ");
   Serial.println(status);
+
+  if (node->unique_id == radio2.unique_id)
+    state = 2;
 }
 
 void get_num_registers_finished(struct A7105_Mesh* node, A7105_Mesh_Status status)
 {
-  Serial.print("Node ");
+  putstring("Node ");
   Serial.print(node->unique_id,HEX);
-  Serial.print(" finished GET_NUM_REGISTERS");
-  Serial.print(" Status: ");
+  putstring(" finished GET_NUM_REGISTERS");
+  putstring(" Status: ");
   Serial.println(status);
 
   if (status == A7105_Mesh_STATUS_OK)
   {
-    Serial.print("Response from node: ");
+    putstring("Response from node: ");
     Serial.print(node->responder_unique_id,HEX);
-    Serial.print(" (");
+    putstring(" (");
     Serial.print(node->responder_node_id);
-    Serial.print("): ");
+    putstring("): ");
     Serial.println(node->num_registers_cache);
+    state = 6;
+    num_registers = radio1.num_registers_cache;
+    reg_index = 0;
+  }
+}
+
+void get_register_name_finished(struct A7105_Mesh* node, A7105_Mesh_Status status)
+{
+  char buffer[64];
+  
+  putstring("Node ");
+  Serial.print(node->unique_id,HEX);
+  putstring(" finished GET_REGISTER_NAME");
+  putstring(" Status: ");
+  Serial.println(status);
+
+  if (status == A7105_Mesh_STATUS_OK)
+  {
+    putstring("Response from node: ");
+    Serial.print(node->responder_unique_id,HEX);
+    putstring(" (");
+    Serial.print(node->responder_node_id);
+    putstring("): \"");
+
+    A7105_Mesh_Util_GetRegisterNameStr(&(node->register_cache),
+                                       buffer,
+                                       63);
+
+    Serial.print(buffer);
+    putstring("\"\r\n");
+    state = 6;
   }
 }
 
 void ping_finished(struct A7105_Mesh* node, A7105_Mesh_Status status)
 {
-  Serial.print("Node ");
+  putstring("Node ");
   Serial.print(node->unique_id,HEX);
-  Serial.print(" finished PING");
-  Serial.print(" Status: ");
+  putstring(" finished PING");
+  putstring(" Status: ");
   Serial.println(status);
+
+  putstring("Free RAM after ping finshed: ");
+  Serial.println(freeRam());
 
   //Kick off a GET_NUM_REGISTERS for the first found node
   if (status == A7105_Mesh_STATUS_OK)
   {
-    byte node_id = A7105_Get_Next_Present_Node(node->presence_table,0);
-    if (node_id != 0)
-      A7105_Mesh_GetNumRegisters(node, node_id, get_num_registers_finished);
+    state = 4;
   }
 }
 
 int success = 1;
 int radio2_joined = 0;
 int ping_sent = 0;
+
+//0 = radio1 joining, nothing else
+//1 = radio2 joining
+//2 = radio2 joined
+//3 = radio1 pings
+//4 = radio1 ping finished
+//5 = radio1 get_num_registers from first ping response (radio2)
+//6 = radio1 get_num_registers finshed
+//7 = radio1 getting register name 
+//8 = radio1 done getting register name
+
 // the loop function runs over and over again forever
 void loop() {
 
-  if (radio2_joined ==0 && millis() > 1500)
+  //Join radio 2
+  if (state == 0 && millis() > 1500)
   {
+    state = 1;
     A7105_Mesh_Join(&radio2, join_finished);
-    radio2_joined = 1;
   }
 
-  if (ping_sent == 0 && millis() > 3000)
+  //Send out a ping from radio 1
+  if (state == 2 && millis() > 3000)
   {
+    state = 3;
     A7105_Mesh_Ping(&radio1, ping_finished);
-    ping_sent = 1;
+  }
+
+  //Get the registers from the first ping response
+  if (state == 4)
+  {
+    state = 5;
+    node_id = A7105_Get_Next_Present_Node(radio1.presence_table,0);
+    if (node_id != 0)
+      A7105_Mesh_GetNumRegisters(&radio1, node_id, get_num_registers_finished);
+  }
+
+  if (state == 6 )
+  {
+      if (reg_index < num_registers)
+      {
+        putstring("Get register name for index: ");
+        Serial.println(reg_index);
+        state = 7;
+        A7105_Mesh_GetRegisterName(&radio1, node_id,reg_index,get_register_name_finished);
+        reg_index++;
+      }
+      else
+        state = 8;
   }
 
 

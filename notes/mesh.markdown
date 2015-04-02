@@ -217,6 +217,9 @@ is a maximum of 60 bytes long.
   The response REGISTER_NAME packet looks like this:
     * REGISTER_NAME | HOP | NODE_ID | UNIQUE_ID | REGISTER_NAME_LEN |REGISTER_NAME
 
+  Note: If the register index is invalid, the response should just 
+        have a REGISTER_NAME_LEN of 0
+
 ## Get Register ##
 
   The process of getting a register value is accomplished by 
