@@ -278,7 +278,6 @@ A7105_Mesh_Status A7105_Mesh_GetNumRegisters(struct A7105_Mesh* node,
 
 void _A7105_Mesh_Handle_GetNumRegisters(struct A7105_Mesh* node);
 void _A7105_Mesh_Handle_NumRegisters(struct A7105_Mesh* node);
-void _A7105_Mesh_Update_GetNumRegisters(struct A7105_Mesh* node);
 
 /*
     A7105_Mesh_Status A7105_Mesh_GetRegisterName(struct A7105_Mesh* node, byte node_id, byte reg_index, uint16_t filter_unique_id, void (*get_register_name_callback)(A7105_Mesh_Status))
@@ -320,7 +319,6 @@ A7105_Mesh_Status A7105_Mesh_GetRegisterName(struct A7105_Mesh* node,
 
 void _A7105_Mesh_Handle_GetRegisterName(struct A7105_Mesh* node);
 void _A7105_Mesh_Handle_RegisterName(struct A7105_Mesh* node);
-void _A7105_Mesh_Update_GetRegisterName(struct A7105_Mesh* node);
 
 
 /*
@@ -352,7 +350,16 @@ A7105_Mesh_Status A7105_Mesh_GetRegister(struct A7105_Mesh* node,
 
 void _A7105_Mesh_Handle_GetRegister(struct A7105_Mesh* node);
 void _A7105_Mesh_Handle_RegisterValue(struct A7105_Mesh* node);
-void _A7105_Mesh_Update_GetRegister(struct A7105_Mesh* node);
+
+/*
+  DESCRIBEME
+
+  Generic function to handle operation timeouts for GET_*,SET_* and puts us back at IDLE
+  and calls the operation callback
+*/
+void _A7105_Mesh_Check_For_Timeout(struct A7105_Mesh* node,
+                                   A7105_Mesh_State operation,
+                                   int timeout);
 
 
 /*

@@ -328,14 +328,20 @@ A7105_Mesh_Status A7105_Mesh_Update(struct A7105_Mesh* node)
   //Update PING activity 
   _A7105_Mesh_Update_Ping(node);
 
-  //Update GET_NUM_REGISTERS activity 
-  _A7105_Mesh_Update_GetNumRegisters(node);
+  //Check for timeout with GET_NUM_REGISTERS
+  _A7105_Mesh_Check_For_Timeout(node,
+                                A7105_Mesh_GET_NUM_REGISTERS,
+                                A7105_MESH_REQUEST_TIMEOUT);
 
-  //Update GET_REGISTER_NAME activity 
-  _A7105_Mesh_Update_GetRegisterName(node);
+  //Check for timeout with GET_REGISTER_NAME 
+  _A7105_Mesh_Check_For_Timeout(node,
+                                A7105_Mesh_GET_REGISTER_NAME,
+                                A7105_MESH_REQUEST_TIMEOUT);
 
-  //Update GET_REGISTER activity 
-  _A7105_Mesh_Update_GetRegister(node);
+  //Check for timeout with GET_REGISTER 
+  _A7105_Mesh_Check_For_Timeout(node,
+                                A7105_Mesh_GET_REGISTER,
+                                A7105_MESH_REQUEST_TIMEOUT);
 
   //Update SET_REGISTER activity 
 
@@ -527,17 +533,6 @@ void _A7105_Mesh_Handle_NumRegisters(struct A7105_Mesh* node)
 
 }
 
-void _A7105_Mesh_Update_GetNumRegisters(struct A7105_Mesh* node)
-{
-  if (node->state == A7105_Mesh_GET_NUM_REGISTERS &&
-      millis() - node->request_sent_time > A7105_MESH_REQUEST_TIMEOUT)
-  {
-    //Update our status back to IDLE and mark the request as a timeout
-    node->state = A7105_Mesh_IDLE;
-    node->operation_callback(node, A7105_Mesh_TIMEOUT);
-  }
-}
-
 A7105_Mesh_Status A7105_Mesh_GetRegisterName(struct A7105_Mesh* node,
                                              byte node_id,
                                              byte reg_index,
@@ -641,17 +636,6 @@ void _A7105_Mesh_Handle_RegisterName(struct A7105_Mesh* node)
     //Update our status back to IDLE
     node->state = A7105_Mesh_IDLE;
     node->operation_callback(node, ret);
-  }
-}
-
-void _A7105_Mesh_Update_GetRegisterName(struct A7105_Mesh* node)
-{
-  if (node->state == A7105_Mesh_GET_REGISTER_NAME &&
-      millis() - node->request_sent_time > A7105_MESH_REQUEST_TIMEOUT)
-  {
-    //Update our status back to IDLE and mark the request as a timeout
-    node->state = A7105_Mesh_IDLE;
-    node->operation_callback(node, A7105_Mesh_TIMEOUT);
   }
 }
 
@@ -760,16 +744,19 @@ void _A7105_Mesh_Handle_RegisterValue(struct A7105_Mesh* node)
   }
 }
 
-void _A7105_Mesh_Update_GetRegister(struct A7105_Mesh* node)
+void _A7105_Mesh_Check_For_Timeout(struct A7105_Mesh* node,
+                                   A7105_Mesh_State operation,
+                                   int timeout)
 {
-  if (node->state == A7105_Mesh_GET_REGISTER &&
-      millis() - node->request_sent_time > A7105_MESH_REQUEST_TIMEOUT)
+  if (node->state == operation &&
+      millis() - node->request_sent_time > (unsigned long)timeout)
   {
     //Update our status back to IDLE and mark the request as a timeout
     node->state = A7105_Mesh_IDLE;
     node->operation_callback(node, A7105_Mesh_TIMEOUT);
   }
 }
+
 
 
 //////////////////////// Utility Functions ///////////////////////
