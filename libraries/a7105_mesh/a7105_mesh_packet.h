@@ -21,5 +21,6 @@
 #define A7105_MESH_PACKET_TARGET_ID  5 //Not present in all packets
 #define A7105_MESH_PACKET_DATA_START 5 //byte that starts the register name/value area
 #define A7105_MESH_PACKET_REG_INDEX  6 //byte that has register index for GET_REGISTER_NAME requests
+#define A7105_MESH_PACKET_NAME_START  6 //start index of the name data for GET_REGISTER/SET_REGISTER/REGISTER_NAME packets
 
 #endif

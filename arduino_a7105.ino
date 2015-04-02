@@ -189,6 +189,35 @@ void get_register_name_finished(struct A7105_Mesh* node, A7105_Mesh_Status statu
   }
 }
 
+void get_register_finished(struct A7105_Mesh* node, A7105_Mesh_Status status)
+{
+  char buffer[64];
+  
+  putstring("Node ");
+  Serial.print(node->unique_id,HEX);
+  putstring(" finished GET_REGISTER");
+  putstring(" Status: ");
+  Serial.println(status);
+
+  if (status == A7105_Mesh_STATUS_OK)
+  {
+    putstring("Response from node: ");
+    Serial.print(node->responder_unique_id,HEX);
+    putstring(" (");
+    Serial.print(node->responder_node_id);
+    putstring("): \"");
+
+    A7105_Mesh_Util_GetRegisterValueStr(&(node->register_cache),
+                                       buffer,
+                                       63);
+
+    Serial.print(buffer);
+    putstring("\"\r\n");
+    state = 10;
+  }
+}
+
+
 void ping_finished(struct A7105_Mesh* node, A7105_Mesh_Status status)
 {
   putstring("Node ");
@@ -220,6 +249,8 @@ int ping_sent = 0;
 //6 = radio1 get_num_registers finshed
 //7 = radio1 getting register name 
 //8 = radio1 done getting register name
+//9 = radio1 getting register value for last register retrieved
+//10 = radio1 done getting register value
 
 // the loop function runs over and over again forever
 void loop() {
@@ -259,6 +290,16 @@ void loop() {
       }
       else
         state = 8;
+  }
+
+  if (state == 8)
+  {
+    putstring("Getting value of register 'a'...\r\n");
+    A7105_Mesh_Register reg;
+    reg._name_len = 1;
+    reg._data[0] = 'a';    
+    A7105_Mesh_GetRegister(&radio1, &reg, get_register_finished);
+    state = 9;
   }
 
 
