@@ -1,14 +1,25 @@
-* Add notes to documentation about repeating JOIN packets regardless of whether
-  we've repeated them before (the special case we added).
-
-* Propagate the callback syntax changes (adding extra parameter) to the arguments
-  of all the other entry-point functions.
-
 * Add notes to docs about running multiple radio nodes requiring you to specify
   your own callback or only the the requesting radio will process any network
   traffic during the request.
 
 * Start thinking about ways to gaurantee uniqueness for the unique_id's
+  Idea: Look for packets with a different node-id and the same unique-ID and 
+        send a new type of conflict packet.
+    
+        This would work because node-id's are regulated so unless you're both 
+        already joined as the same node ID, one will get bounced and get a 
+        different node-id on join. Thusly, it's a good chance you can catch
+        an identical unique ID.
+
+        The behavior would probably be an interrupting re-join on the lower
+        node id (since we wouldn't notice if they were identical).  
+
+        NOTE: we'll also have to disable our unique_ID filtering for the 
+              pending operation if there is one when we do this so we don't 
+              miss data.
 
 * Flesh out the remainder of the PACKET types and requests once the Mesh is
   working with JOIN, PING, CONFLICT_NAME and GET_NUM_REGISTERS
+
+* After the Mesh is working, look for ways to reduce the size of the 
+  generated HEX file, things are starting to get big...

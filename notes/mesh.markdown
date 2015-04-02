@@ -1,4 +1,4 @@
-# Mesh Network Overview #
+# Mesh Network v1.0 Overview #
 
 ## Primary Canons ##
  1. As stateless as practical. Large state means high RAM usage and inflexible rules. Both are catastrophic.
@@ -76,15 +76,30 @@
     first NUM_REGISTERS packet back, we can filter on the unique ID of the node also so we won't
     get garbage from a different node if a ID swap happens.
 
-  Repeating:
-    To prevent tons of useless traffic on the mesh, we have some heuristics to use to keep
-    these useless packets out of the repeat cache.
 
-    A packet will *not* be repeated if:
-      1. A node is not actively on a mesh
-      2. We originally sent the packet (identified by the node-id, unique-id header elements)
-      3. The packet was a request addressed to us (we're the target so nobody else needs it)
-      4. We haven't already repeated this packet recently (uses the repeat cache)
+### Packet Repeating ###
+To overcome the range limitations of the tiny radios used for the Mesh, all nodes on a Mesh 
+act as repeaters and repeat the packets they receive. However, this is not done blindly as
+simply repeating all the packets would cause a ton of useless traffic in addition to the 
+beneficial.
+
+Aside from the implementation, packets should be repeated up to 16 times (tracked as "hop count"
+in the packets themselves). All packets will be repeated, except:
+  * If the node receiving a packet is not Joined to a mesh (either joining or not connected at all).
+  * The receiving node originally sent the packet (identified by node-ID and unique-ID in the packet
+    header).
+  * The packet was a request addressed to the receiving node directly (like GET_NUM_REGISTERS) or
+    indirectly (like GET_REGISTER for a node that services a particular register). The idea is that
+    we're the only ones that are servicing the request, so we don't need to share it further.
+  * Packets we previously repeated (identical packets except with a different hop count.
+
+#### Exception: The JOIN packet ####
+  The one exception to the exclusion rules above are that JOIN packets are *always* repeated. 
+The reasoning behind this is to maximize visibility of joining nodes to ensure we minimize node-ID
+collisions.  Since JOIN packets are repeated a bunch of times while the node is joining, each 
+repetition will be repeated regardless and will not be subject to the rule about repeating identical
+packets.
+
 
 ### Auto-Rejoin and Node ID ###
 The node ID of a node on a mesh can change at any time due to a CONFLICT_NAME being passed 

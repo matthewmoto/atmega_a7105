@@ -56,6 +56,15 @@ of the mesh library is organized so only one operation can be requested at a tim
 multi-operation activities will require additional state maintenance, but it keeps the core library small so RAM doesn't get
 spent unless we absolutely need it.
 
+### Multiple Radios ###
+For some unforseen reason a microcontroller wants to run two independent nodes with two A7105 radio modules, it certainly can.
+However, there is one important thing to remember with the library. If the calling code does not specify a callback and 
+uses operations on one Mesh node with the blocking interface, the other node will *NOT* process any radio traffic during 
+that operation. In 99% of cases, this is bad.
+
+The solution is to specify your own finished() callbacks for any operations and call A7105_Mesh_Update() on both nodes in
+your main loop. This is the format used for the test harness used while developing this library.
+
 ### Calling A7105_Mesh_Update ###
 It's important to remember that, if you're using the non-blocking API for the Mesh, you'll need to regularly call A7105_Mesh_Update()
 to let the library shuffle packets around and complete operations. Of course, regularly should mean "whenever your code isn't actively

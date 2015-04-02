@@ -4,22 +4,39 @@
 #include <a7105.h>
 #include "a7105_mesh_packet.h"
 
-#define A7105_MESH_PACKET_SIZE 64 //64 bytes 
+//Packet size (64 bytes is the Maximum supported in normal FIFO mode by the A7105)
+#define A7105_MESH_PACKET_SIZE 64
+
+//Total available length for register name + value in a packet 
 #define A7105_MESH_MAX_REGISTER_ARRAY_SIZE A7105_MESH_PACKET_SIZE - 7 //64 bytes - 7 needed for headers and sizes
+
+//Maximum number of packets to cache for repeating 
+//(kept small to prevent using too much RAM)
 #define A7105_MESH_MAX_REPEAT_CACHE_SIZE 3
+
+//Maximum number of times a packet can be repeated on the mesh
 #define A7105_MESH_MAX_HOP_COUNT 16
 
-//Join process constants (milliseconds)
-#define A7105_MESH_JOIN_ACCEPT_DELAY 1000
-#define A7105_MESH_MIN_JOIN_RETRANSMIT_DELAY 100
+/////////Join process constants (milliseconds)///////////
+
+#define A7105_MESH_JOIN_ACCEPT_DELAY 1000 //Time from sending the first JOIN packet to believing we're OK to join
+
+//These define the window for the randomly selected frequency
+//at which we broadcast JOIN packets during the joining process
+#define A7105_MESH_MIN_JOIN_RETRANSMIT_DELAY 100 
 #define A7105_MESH_MAX_JOIN_RETRANSMIT_DELAY 400
 
-//Milliseconds 
+//These define the window for the random delay before doing
+//things like repeating packets or other mass-response actvities
 #define A7105_MESH_MAX_RANDOM_DELAY 50
 #define A7105_MESH_MIN_RANDOM_DELAY 10
 
-#define A7105_MESH_REQUEST_HANDLING_DEBOUNCE 200 //milliseconds
+//Milliseconds after handling a request that we'll ignore duplicate
+//requests (from the same node/unique ID)
+#define A7105_MESH_REQUEST_HANDLING_DEBOUNCE 200 
 
+//Time after which we will assume we've heard from everybody
+//on the mesh
 #define A7105_MESH_PING_TIMEOUT 1000 
 
 enum A7105_Mesh_State{
@@ -41,7 +58,6 @@ enum A7105_Mesh_Status{
   A7105_Mesh_BUSY,
   A7105_Mesh_MESH_FULL,
   A7105_Mesh_MESH_ALREADY_JOINING,
-
   A7105_Mesh_RADIO_INIT_ERROR,
   A7105_Mesh_RADIO_CALIBRATION_ERROR,
   A7105_Mesh_RADIO_INVALID_CHANNEL,
@@ -234,7 +250,7 @@ void _A7105_Mesh_Update_Ping(struct A7105_Mesh* node);
 */
 A7105_Mesh_Status A7105_Mesh_GetNumRegisters(struct A7105_Mesh* node, 
                                              byte node_id, 
-                                             void (*get_num_registers_callback)(A7105_Mesh_Status));
+                                              void (*get_num_registers_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status)); 
 
 
 /*
@@ -266,7 +282,7 @@ A7105_Mesh_Status A7105_Mesh_GetRegisterName(struct A7105_Mesh* node,
                                              byte node_id, 
                                              byte reg_index, 
                                              uint16_t filter_unique_id,
-                                             void (*get_register_name_callback)(A7105_Mesh_Status));
+                                             void (*get_register_name_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status)); 
 
 
 /*
@@ -293,7 +309,7 @@ A7105_Mesh_Status A7105_Mesh_GetRegisterName(struct A7105_Mesh* node,
 A7105_Mesh_Status A7105_Mesh_GetRegister(struct A7105_Mesh* node, 
                                          byte* register_name, 
                                          byte register_name_len, 
-                                         void (*get_register_callback)(A7105_Mesh_Status));
+                                         void (*get_register_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status)); 
 
 
 /*
@@ -324,7 +340,7 @@ A7105_Mesh_Status A7105_Mesh_GetRegister(struct A7105_Mesh* node,
                                              byte register_name_len,
                                              byte* register_value, 
                                              byte register_value_len,
-                                             void (*set_register_callback)(A7105_Mesh_Status));
+                                             void (*set_register_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status)); 
 
 //////////////////////// Utility Functions ///////////////////////
 
