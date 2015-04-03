@@ -98,9 +98,9 @@ struct A7105_Mesh_Register
   byte _name_len; 
   byte _data_len;
   
-  //buffer for errors in SET_REGISTER_ACK
-  //NOTE: Can we put this someplace else?
-  char _error_str[A7105_MESH_MAX_REGISTER_PART_SIZE];
+  //Flag that indicates _data is a null terminated string instead of the segmented name/data pair
+  byte _error_set; //0 = false, 1 = _data is an ascii error string 
+
   /*
     Callback for when a node receives a "SET_REGISTER" request for this register.
     If this is NULL, the value passed in a SET_REGISTER request will be assigned

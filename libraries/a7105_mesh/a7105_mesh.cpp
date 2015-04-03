@@ -19,7 +19,7 @@ void A7105_Mesh_Register_Initialize(struct A7105_Mesh_Register* reg,
   memset(reg->_data,0,A7105_MESH_MAX_REGISTER_ARRAY_SIZE);
   reg->_name_len = 0;
   reg->_data_len = 0;
-  memset(reg->_error_str,0,A7105_MESH_MAX_REGISTER_PART_SIZE);
+  reg->_error_set = 0;
 
   reg->set_callback = set_callback;
   reg->get_callback = get_callback;
@@ -28,18 +28,22 @@ void A7105_Mesh_Register_Initialize(struct A7105_Mesh_Register* reg,
 void A7105_Mesh_Register_Set_Error(struct A7105_Mesh_Register* reg, const char* error_msg)
 {
   //Zero out the error buffer and copy the message, but truncate before we overrun the buffer
-  memset(reg->_error_str,0,A7105_MESH_MAX_REGISTER_PART_SIZE);
-  strncpy(reg->_error_str,error_msg,A7105_MESH_MAX_REGISTER_PART_SIZE-1);
+  memset(reg->_data,0,A7105_MESH_MAX_REGISTER_ARRAY_SIZE);
+  strncpy((char*)reg->_data,error_msg,A7105_MESH_MAX_REGISTER_PART_SIZE-1);
+  reg->_error_set = true;
 }
 
 const char* A7105_Mesh_Register_Get_Error(struct A7105_Mesh_Register* reg)
 {
-  return reg->_error_str;
+  if (reg->_error_set)
+    return (const char*)reg->_data;
+  return NULL;
 }
 
 void _A7105_Mesh_Register_Clear_Error(struct A7105_Mesh_Register* reg)
 {
-  memset(reg->_error_str,0,A7105_MESH_MAX_REGISTER_PART_SIZE);
+  memset(reg->_data,0,A7105_MESH_MAX_REGISTER_ARRAY_SIZE);
+  reg->_error_set = 0;
 }
 
 byte A7105_Mesh_Util_SetRegisterNameStr(struct A7105_Mesh_Register* reg,
@@ -144,7 +148,7 @@ void A7105_Mesh_Register_Copy(struct A7105_Mesh_Register* dest, struct A7105_Mes
   dest->_name_len = src->_name_len;
   dest->_data_len = src->_data_len;
   memcpy(dest->_data,src->_data,A7105_MESH_MAX_REGISTER_ARRAY_SIZE);
-  memcpy(dest->_error_str,src->_error_str,A7105_MESH_MAX_REGISTER_PART_SIZE);
+  dest->_error_set = src->_error_set;
 }
 
 /////////////// A7105_Mesh Functions /////////////////////
@@ -995,9 +999,9 @@ void _A7105_Mesh_Handle_SetRegister(struct A7105_Mesh* node)
         error_set = true;
 
         //Put a generic error in if none was specified
-        if (strlen(node->registers[register_index]._error_str) == 0)
+        if (node->registers[register_index]._error_set == 0)
         {
-          strncpy_P(node->registers[register_index]._error_str, (char*)pgm_read_word(&A7105_ERROR_STRINGS[SET_REG_CB_NO_ERROR_SET]),A7105_MESH_MAX_REGISTER_PART_SIZE - 1);
+          strncpy_P((char*)node->register_cache._data, (char*)pgm_read_word(&A7105_ERROR_STRINGS[SET_REG_CB_NO_ERROR_SET]),A7105_MESH_MAX_REGISTER_PART_SIZE - 1);
         }
       }
 
@@ -1006,7 +1010,7 @@ void _A7105_Mesh_Handle_SetRegister(struct A7105_Mesh* node)
       //left wondering
       else if (ret != A7105_Mesh_STATUS_OK)
       {
-        strncpy_P(node->registers[register_index]._error_str, (char*)pgm_read_word(&A7105_ERROR_STRINGS[SET_REG_CB_BOGUS_RETURN]),A7105_MESH_MAX_REGISTER_PART_SIZE - 1);
+        strncpy_P((char*)node->register_cache._data, (char*)pgm_read_word(&A7105_ERROR_STRINGS[SET_REG_CB_BOGUS_RETURN]),A7105_MESH_MAX_REGISTER_PART_SIZE - 1);
       }
     }
 
@@ -1018,7 +1022,7 @@ void _A7105_Mesh_Handle_SetRegister(struct A7105_Mesh* node)
                                           &(node->registers[register_index]),
                                           true))
       {
-        strncpy_P(node->registers[register_index]._error_str, (char*)pgm_read_word(&A7105_ERROR_STRINGS[SET_REG_INVALID_VALUE_SIZE]),A7105_MESH_MAX_REGISTER_PART_SIZE - 1);
+        strncpy_P((char*)node->register_cache._data, (char*)pgm_read_word(&A7105_ERROR_STRINGS[SET_REG_INVALID_VALUE_SIZE]),A7105_MESH_MAX_REGISTER_PART_SIZE - 1);
         error_set = true;
       }
     }
@@ -1033,8 +1037,11 @@ void _A7105_Mesh_Handle_SetRegister(struct A7105_Mesh* node)
     if (error_set)
     {
       strncpy((char*)&(node->packet_cache[A7105_MESH_PACKET_ERR_MSG_START]),
-              node->registers[register_index]._error_str,
+              (char*)node->register_cache._data,
               A7105_MESH_MAX_REGISTER_PART_SIZE - 1);
+
+       //Re-Init the register cache also (since we potentially used it to store an error message)
+       A7105_Mesh_Register_Initialize(&(node->register_cache),NULL,NULL);
     }
 
     _A7105_Mesh_Send_Response(node);
@@ -1060,10 +1067,10 @@ void _A7105_Mesh_Handle_SetRegisterAck(struct A7105_Mesh* node)
     {
       //Set the return value
       ret = A7105_Mesh_INVALID_REGISTER_VALUE;
-      //clear the register cache error (zero it out)
-      _A7105_Mesh_Register_Clear_Error(&(node->register_cache));
+      //Set the error flag in the register_cache
+      node->register_cache._error_set = true;
       //copy the error string from the packet
-      strncpy(node->register_cache._error_str,
+      strncpy((char*)node->register_cache._data,
               (char*)&(node->packet_cache[A7105_MESH_PACKET_ERR_MSG_START]),
               A7105_MESH_MAX_REGISTER_PART_SIZE - 1);
 
