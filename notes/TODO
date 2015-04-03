@@ -1,8 +1,7 @@
-* Update the test harness to properly initialize the Register object
+* move the error string from the Register object to the Node
 
-* Update the test harness to use a state/context object instead of 
-  an ugly global state variable (this thing will be included in 
-  the final deliverable.
+* update Get_Next_Present_Node to simply take a node object instead of the presence table
+  (but make sure we don't need it that way internally first)
 
 * Test SET_REGISTER and the set/get callbacks for Register objects
 

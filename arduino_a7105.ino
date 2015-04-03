@@ -39,24 +39,61 @@ results into the mesh library.
 
 #define RADIO_IDS 0xdb042679 //taken from devation code
 
-#define PING_TIMEOUT 1500 //time we wait between starting a TX and receiving notification of RX
+#define RADIO1_JOIN_DELAY 0
+#define RADIO2_JOIN_DELAY 1500
+//#define RADIO2_NUM_REGS 2
+#define RADIO2_NUM_REGS 1
 
 #define putstring(x) SerialPrint_P(PSTR(x))                             
 void SerialPrint_P(PGM_P str) {                                         
   for (uint8_t c; (c = pgm_read_byte(str)); str++) Serial.write(c);     
 } 
 
+const char* RADIO2_REG_NAMES[] = {"Radio2_R1"}; //,
+//                                "Radio2_R2"};
 
-void join_finished(struct A7105_Mesh* node, A7105_Mesh_Status status,void* context);
+enum TestState {
+  JOINING,
+  RADIOS_JOINED,
+  R1_PINGING,
+  R1_PING_DONE,
+  R1_GET_NUM_REGS, //LOOP start for every node seen in the PING
+  R1_GET_NUM_REGS_DONE,//LOOP start (for every register on the first node)
+  R1_GET_REG_NAME, 
+  R1_GET_REG_NAME_DONE, 
+  R1_GET_REG_VALUE,
+  R1_GET_REG_VALUE_DONE,
+  R1_SET_REG_VALUE,
+  R1_SET_REG_VALUE_DONE, //LOOP END (both)
+  IDLE, 
+};
 
-A7105_Mesh radio1;
-A7105_Mesh radio2;
 
-#define RADIO2_NUMREGISTERS 1
-int state = 0;
-byte node_id = 255;
-byte reg_index = 0;
-byte num_registers = 0;
+struct TestHarnessContext
+{
+  unsigned long radio1_join_delay;
+  unsigned long radio2_join_delay;
+  struct A7105_Mesh radio1;
+  struct A7105_Mesh radio2;
+  byte radio1_joined; //1 == in progress, 2 == joined
+  byte radio2_joined;
+  TestState curr_state;
+  byte curr_target_node;
+  byte curr_target_reg_index;
+  byte curr_target_num_registers;
+  struct A7105_Mesh_Register reg_buffer;
+};
+struct TestHarnessContext context;
+
+A7105_Mesh_Register radio2_regs[RADIO2_NUM_REGS];
+
+int freeRam () 
+{
+  extern int __heap_start, *__brkval; 
+  int v; 
+  return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval); 
+}
+
 
 // the setup function runs once when you press reset or power the board
 void setup() {
@@ -65,14 +102,20 @@ void setup() {
   Serial.println("Starting...");
 
   //TODO: Can we nuke this safely?
-  pinMode(MOSI,OUTPUT);
-  pinMode(MISO,INPUT);
-  pinMode(SCK,OUTPUT);
-  pinMode(RECORD,OUTPUT);
+  //pinMode(MOSI,OUTPUT);
+  //pinMode(MISO,INPUT);
+  //pinMode(SCK,OUTPUT);
 
+  //DEBUG (for logic probe operations)
+  pinMode(RECORD,OUTPUT);
   digitalWrite(RECORD,LOW);
 
-  A7105_Mesh_Status success = A7105_Mesh_Initialize(&radio1,
+  //DEBUG (print free RAM for monitoring)
+  putstring("Free RAM [setup()]: ");
+  Serial.println(freeRam());
+
+  //Initialize the radios
+  A7105_Mesh_Status success = A7105_Mesh_Initialize(&(context.radio1),
                                                     RADIO1_SELECT_PIN,
                                                     RADIO1_WTR_PIN,
                                                     RADIO_IDS,
@@ -80,7 +123,7 @@ void setup() {
                                                     0,
                                                     A7105_TXPOWER_150mW,
                                                     0);
-  A7105_Mesh_Status success2 = A7105_Mesh_Initialize(&radio2,
+  A7105_Mesh_Status success2 = A7105_Mesh_Initialize(&(context.radio2),
                                                      RADIO2_SELECT_PIN,
                                                      RADIO2_WTR_PIN,
                                                      RADIO_IDS,
@@ -88,42 +131,41 @@ void setup() {
                                                      0,
                                                      A7105_TXPOWER_150mW,
                                                      0);
-  //A7105_Status_Code success = A7105_Easy_Setup_Radio(&radio1,RADIO1_SELECT_PIN, RADIO1_WTR_PIN, RADIO_IDS, A7105_DATA_RATE_250Kbps,0,A7105_TXPOWER_150mW,1,1);
-  //A7105_Status_Code success2 = A7105_Easy_Setup_Radio(&radio2,RADIO2_SELECT_PIN, RADIO2_WTR_PIN, RADIO_IDS, A7105_DATA_RATE_250Kbps,0,A7105_TXPOWER_150mW,1,1);
-
   putstring("Radio 1 Init: ");
   Serial.print(success == A7105_Mesh_STATUS_OK);
   putstring(", ID = ");
-  Serial.println(radio1.unique_id,HEX);
+  Serial.println(context.radio1.unique_id,HEX);
   
   putstring("Radio 2 Init: ");
   Serial.print(success2 == A7105_Mesh_STATUS_OK);
   putstring(", ID = ");
-  Serial.println(radio2.unique_id,HEX);
+  Serial.println(context.radio2.unique_id,HEX);
 
 
-  //Try to make radio1 join the Mesh
-  A7105_Mesh_Join(&radio1, join_finished);
+  //Initialize the context structure
+  context.curr_state = JOINING; 
+  context.radio1_joined = false;
+  context.radio2_joined = false;
+  context.radio1_join_delay = RADIO1_JOIN_DELAY;
+  context.radio2_join_delay = RADIO2_JOIN_DELAY;
+  A7105_Mesh_Register_Initialize(&(context.reg_buffer),NULL,NULL);
+
+  //Set the context for both radios
+  A7105_Mesh_Set_Context(&(context.radio1),&context);
+  A7105_Mesh_Set_Context(&(context.radio2),&context);
 
   //initialize radio2's registers
-  radio2.registers = (struct A7105_Mesh_Register*)malloc(sizeof(struct A7105_Mesh_Register)*1);
-
-  radio2.registers[0]._name_len = 1;
-  radio2.registers[0]._data_len = 1;
-  radio2.registers[0]._data[0] = 'a';
-  radio2.registers[0]._data[1] = 'A';
-  
-  radio2.num_registers = 1;
-  //radio2.num_registers = RADIO2_NUMREGISTERS;
+  for (int x = 0;x<RADIO2_NUM_REGS;x++)
+  {
+    A7105_Mesh_Register_Initialize(&(radio2_regs[x]),NULL,NULL);
+    A7105_Mesh_Util_SetRegisterNameStr(&(radio2_regs[x]),RADIO2_REG_NAMES[x]);
+    A7105_Mesh_Util_SetRegisterValueU32(&(radio2_regs[x]),x);
+  }
+  A7105_Mesh_Set_Node_Registers(&(context.radio2),radio2_regs,RADIO2_NUM_REGS);
    
 }
 
-int freeRam () 
-{
-  extern int __heap_start, *__brkval; 
-  int v; 
-  return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval); 
-}
+
 
 void join_finished(struct A7105_Mesh* node, A7105_Mesh_Status status,void* context)
 {
@@ -134,10 +176,43 @@ void join_finished(struct A7105_Mesh* node, A7105_Mesh_Status status,void* conte
   putstring(" Status: ");
   Serial.println(status);
 
-  if (node->unique_id == radio2.unique_id)
-    state = 2;
+  TestHarnessContext* c = (TestHarnessContext*)context;
+
+  //Update our test harness state
+  if (node->unique_id == c->radio1.unique_id)
+    c->radio1_joined = 2;
+  if (node->unique_id == c->radio2.unique_id)
+    c->radio2_joined = 2;
+
+  putstring("Radio1 joined: ");
+  Serial.println(c->radio1_joined);
+  putstring("Radio2 joined: ");
+  Serial.println(c->radio2_joined);
+
+  if (c->radio1_joined + c->radio2_joined == 4)
+    c->curr_state = RADIOS_JOINED;
 }
 
+void ping_finished(struct A7105_Mesh* node, A7105_Mesh_Status status,void* context)
+{
+  putstring("Node ");
+  Serial.print(node->unique_id,HEX);
+  putstring(" finished PING");
+  putstring(" Status: ");
+  Serial.println(status);
+
+  putstring("Free RAM after ping finshed: ");
+  Serial.println(freeRam());
+
+  TestHarnessContext* c = (TestHarnessContext*)context;
+
+  //Kick off a GET_NUM_REGISTERS for the first found node
+  if (status == A7105_Mesh_STATUS_OK)
+  {
+    c->curr_target_node = 0;
+    c->curr_state = R1_PING_DONE;
+  }
+}
 void get_num_registers_finished(struct A7105_Mesh* node, A7105_Mesh_Status status,void* context)
 {
   putstring("Node ");
@@ -146,6 +221,10 @@ void get_num_registers_finished(struct A7105_Mesh* node, A7105_Mesh_Status statu
   putstring(" Status: ");
   Serial.println(status);
 
+  putstring("Free RAM after get_num_registers finshed: ");
+  Serial.println(freeRam());
+
+  TestHarnessContext* c = (TestHarnessContext*)context;
   if (status == A7105_Mesh_STATUS_OK)
   {
     putstring("Response from node: ");
@@ -154,10 +233,13 @@ void get_num_registers_finished(struct A7105_Mesh* node, A7105_Mesh_Status statu
     Serial.print(node->responder_node_id);
     putstring("): ");
     Serial.println(node->num_registers_cache);
-    state = 6;
-    num_registers = radio1.num_registers_cache;
-    reg_index = 0;
+
+    c->curr_target_reg_index = 0;
+    c->curr_target_num_registers = node->num_registers_cache;
+    c->curr_state = R1_GET_NUM_REGS_DONE;
   }
+  else
+    c->curr_state = IDLE;
 }
 
 void get_register_name_finished(struct A7105_Mesh* node, A7105_Mesh_Status status,void* context)
@@ -169,6 +251,11 @@ void get_register_name_finished(struct A7105_Mesh* node, A7105_Mesh_Status statu
   putstring(" finished GET_REGISTER_NAME");
   putstring(" Status: ");
   Serial.println(status);
+
+  putstring("Free RAM after get_register_name finshed: ");
+  Serial.println(freeRam());
+
+  TestHarnessContext* c = (TestHarnessContext*)context;
 
   if (status == A7105_Mesh_STATUS_OK)
   {
@@ -184,19 +271,28 @@ void get_register_name_finished(struct A7105_Mesh* node, A7105_Mesh_Status statu
 
     Serial.print(buffer);
     putstring("\"\r\n");
-    state = 6;
+
+    //Save the register in our cache
+    A7105_Mesh_Register_Copy(&(c->reg_buffer),&(node->register_cache));
+
+    c->curr_state = R1_GET_REG_NAME_DONE;
   }
 }
 
 void get_register_finished(struct A7105_Mesh* node, A7105_Mesh_Status status,void* context)
 {
-  char buffer[64];
-  
+  uint32_t buffer; 
+
   putstring("Node ");
   Serial.print(node->unique_id,HEX);
   putstring(" finished GET_REGISTER");
   putstring(" Status: ");
   Serial.println(status);
+
+  putstring("Free RAM after get_register finshed: ");
+  Serial.println(freeRam());
+
+  TestHarnessContext* c = (TestHarnessContext*)context;
 
   if (status == A7105_Mesh_STATUS_OK)
   {
@@ -206,120 +302,166 @@ void get_register_finished(struct A7105_Mesh* node, A7105_Mesh_Status status,voi
     Serial.print(node->responder_node_id);
     putstring("): \"");
 
-    A7105_Mesh_Util_GetRegisterValueStr(&(node->register_cache),
-                                       buffer,
-                                       63);
+    byte success = A7105_Mesh_Util_GetRegisterValueU32(&(node->register_cache),&buffer);
 
     Serial.print(buffer);
     putstring("\"\r\n");
-    state = 10;
+
+    //Put the returned value in our cache so we can increment
+    A7105_Mesh_Register_Copy(&(c->reg_buffer),&(node->register_cache));
+    
+    c->curr_state = R1_GET_REG_VALUE_DONE;
   }
 }
 
-
-void ping_finished(struct A7105_Mesh* node, A7105_Mesh_Status status,void* context)
+void set_register_finished(struct A7105_Mesh* node, A7105_Mesh_Status status,void* context)
 {
+
   putstring("Node ");
   Serial.print(node->unique_id,HEX);
-  putstring(" finished PING");
+  putstring(" finished SET_REGISTER");
   putstring(" Status: ");
   Serial.println(status);
 
-  putstring("Free RAM after ping finshed: ");
+  putstring("Free RAM after set_register finshed: ");
   Serial.println(freeRam());
 
-  //Kick off a GET_NUM_REGISTERS for the first found node
+  TestHarnessContext* c = (TestHarnessContext*)context;
+
+  putstring("Response from node: ");
+  Serial.print(node->responder_unique_id,HEX);
+  putstring(" (");
+  Serial.print(node->responder_node_id);
+  putstring("): ");
+  Serial.println(status);
+
+
+
   if (status == A7105_Mesh_STATUS_OK)
   {
-    state = 4;
+    putstring("Setting state to start querying next available register\r\n");
+    
+    c->curr_state = R1_GET_NUM_REGS_DONE;
+    c->curr_target_reg_index += 1;
   }
 }
 
-int success = 1;
-int radio2_joined = 0;
-int ping_sent = 0;
-
-//0 = radio1 joining, nothing else
-//1 = radio2 joining
-//2 = radio2 joined
-//3 = radio1 pings
-//4 = radio1 ping finished
-//5 = radio1 get_num_registers from first ping response (radio2)
-//6 = radio1 get_num_registers finshed
-//7 = radio1 getting register name 
-//8 = radio1 done getting register name
-//9 = radio1 getting register value for last register retrieved
-//10 = radio1 done getting register value
 
 // the loop function runs over and over again forever
 void loop() {
 
-  //Join radio 2
-  if (state == 0 && millis() > 1500)
+  //Join the radios if they haven't done so yet
+  if (millis() > context.radio1_join_delay && context.radio1_joined == 0)
   {
-    state = 1;
-    A7105_Mesh_Join(&radio2, join_finished);
+    context.radio1_joined = 1;
+    A7105_Mesh_Join(&(context.radio1), join_finished);
+  }
+  if (millis() > context.radio2_join_delay && context.radio2_joined == 0)
+  {
+    context.radio2_joined = 1;
+    A7105_Mesh_Join(&(context.radio2), join_finished);
   }
 
-  //Send out a ping from radio 1
-  if (state == 2 && millis() > 3000)
+  //Send a ping with radio1 once all radios are joined to the mesh
+  if (context.curr_state == RADIOS_JOINED)
   {
-    state = 3;
-    A7105_Mesh_Ping(&radio1, ping_finished);
+    putstring("Radio1 Pinging...\r\n");
+    context.curr_state = R1_PINGING;
+    A7105_Mesh_Ping(&(context.radio1), ping_finished);
   }
 
-  //Get the registers from the first ping response
-  if (state == 4)
+  if (context.curr_state == R1_PING_DONE)
   {
-    state = 5;
-    node_id = A7105_Get_Next_Present_Node(radio1.presence_table,0);
-    if (node_id != 0)
-      A7105_Mesh_GetNumRegisters(&radio1, node_id, get_num_registers_finished);
-  }
+    putstring("Getting next node after id: ");
+    Serial.println(context.curr_target_node);
 
-  if (state == 6 )
-  {
-      if (reg_index < num_registers)
-      {
-        putstring("Get register name for index: ");
-        Serial.println(reg_index);
-        state = 7;
-        A7105_Mesh_GetRegisterName(&radio1, node_id,reg_index,get_register_name_finished);
-        reg_index++;
-      }
-      else
-        state = 8;
-  }
+    //Get the next node to query
+    context.curr_target_node = A7105_Get_Next_Present_Node(context.radio1.presence_table,context.curr_target_node);
+    
+    putstring("New node is id: ");
+    Serial.println(context.curr_target_node);
 
-  if (state == 8)
-  {
-    putstring("Getting value of register 'a'...\r\n");
-    A7105_Mesh_Register reg;
-    reg._name_len = 1;
-    reg._data_len = 1;
-    reg._data[0] = 'a';    
-    A7105_Mesh_GetRegister(&radio1, &reg, get_register_finished);
-    state = 9;
-  }
-
-
-
-  A7105_Mesh_Update(&radio1);
-  A7105_Mesh_Update(&radio2);
-  //Serial.println("Looping...");
-  //Serial.println(freeRam()); 
-  /*
-  if (success) 
-  {
-    success = bounce_packet(&radio1,&radio2,millis());
-    if (success)
+    //If we're done querying nodes
+    if (context.curr_target_node == 0)
     {
-      Serial.println("Boucing a packet back...");
-      success = bounce_packet(&radio2,&radio1,millis());
+      putstring("Done iterating nodes...\r\n");
+      //NOTE: uncomment this to just keep incrementing registers forever
+      context.curr_state = IDLE;
     }
 
-    Serial.println("done...");
+    //else, kick off a get num regs for the next node
+    else
+    {
+      context.curr_state = R1_GET_NUM_REGS;
+      putstring("Radio1 GetNumRegisters for: ");
+      Serial.println(context.curr_target_node);
+      A7105_Mesh_GetNumRegisters(&(context.radio1), context.curr_target_node, get_num_registers_finished);
+    }
   }
-  */
-  delay(10);
+
+  if (context.curr_state == R1_GET_NUM_REGS_DONE)
+  {
+    //If we've exhausted all the registers on the current node
+    if (context.curr_target_reg_index >= context.curr_target_num_registers)
+    {
+      putstring("Done iterating all registers for node: ");
+      Serial.println(context.curr_target_node);
+      //Go back to intereate the next node (if any are found)
+      context.curr_state = R1_PING_DONE;
+    }
+
+    else
+    {
+      context.curr_state = R1_GET_REG_NAME;
+      //Start getting the names of the registers
+      putstring("Radio1 GetRegisterName for index: ");
+      Serial.print(context.curr_target_reg_index);
+      putstring(" on node ");
+      Serial.println(context.curr_target_node);
+
+      A7105_Mesh_GetRegisterName(&(context.radio1),
+                                 context.curr_target_node,
+                                 context.curr_target_reg_index,
+                                 get_register_name_finished);
+    }
+  }
+
+  if (context.curr_state == R1_GET_REG_NAME_DONE)
+  {
+    //Get the value of the current register
+    context.curr_state = R1_GET_REG_VALUE;
+    putstring("Radio1 GetRegister for register name: ");
+    char name_buff[64];
+    A7105_Mesh_Util_GetRegisterNameStr(&(context.reg_buffer),name_buff,64);
+    Serial.println(name_buff);
+
+    A7105_Mesh_GetRegister(&(context.radio1),
+                           &(context.reg_buffer),
+                           get_register_finished);
+ }
+
+ if (context.curr_state == R1_GET_REG_VALUE_DONE)
+ {
+    context.curr_state = R1_SET_REG_VALUE;
+    putstring("Radio1 SetRegister for register name: ");
+    char name_buff[64];
+    A7105_Mesh_Util_GetRegisterNameStr(&(context.reg_buffer),name_buff,64);
+
+    Serial.println(name_buff);
+    putstring("Incrementing value by 1\r\n");
+
+    //increment the value in the register object
+    uint32_t val;
+    A7105_Mesh_Util_GetRegisterValueU32(&(context.reg_buffer),&val);
+    val++;
+    A7105_Mesh_Util_SetRegisterValueU32(&(context.reg_buffer),val);
+
+    A7105_Mesh_SetRegister(&(context.radio1),
+                           &(context.reg_buffer),
+                           set_register_finished);
+ }
+
+  A7105_Mesh_Update(&(context.radio1));
+  A7105_Mesh_Update(&(context.radio2));
+  //delay(10);
 }

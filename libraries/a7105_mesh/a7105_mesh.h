@@ -54,8 +54,10 @@ void SerialPrint_P(PGM_P str);
 //strings. The memory is tight on these little AVR chips...)
 #define SET_REG_CB_NO_ERROR_SET 0
 #define SET_REG_CB_BOGUS_RETURN 1
+#define SET_REG_INVALID_VALUE_SIZE 2
 const char ERR_STR1[] PROGMEM = "Unknown Error (not set)";
 const char ERR_STR2[] PROGMEM = "Remote Callback Error";
+const char ERR_STR3[] PROGMEM = "Invalid Value Size";
 
 const char* const A7105_ERROR_STRINGS[] PROGMEM = {ERR_STR1, ERR_STR2};
 
@@ -86,7 +88,6 @@ enum A7105_Mesh_Status{
   A7105_Mesh_RADIO_INIT_ERROR,
   A7105_Mesh_RADIO_CALIBRATION_ERROR,
   A7105_Mesh_RADIO_INVALID_CHANNEL,
-  A7105_Mesh_SET_REGISTER_REQUESTED,
   A7105_Mesh_AUTO_SET_REGISTER,
 };
 
@@ -158,11 +159,23 @@ void _A7105_Mesh_Register_Clear_Error(struct A7105_Mesh_Register* reg);
 byte A7105_Mesh_Util_SetRegisterNameStr(struct A7105_Mesh_Register* reg,
                                         const char* name);
 
+//Returns true or false based on success
+byte A7105_Mesh_Util_SetRegisterValueStr(struct A7105_Mesh_Register* reg,
+                                        const char* value);
+
+//Returns true or false based on success
+byte A7105_Mesh_Util_SetRegisterValueU32(struct A7105_Mesh_Register* reg,
+                                         const uint32_t value);
+
+
 //Returns length of register name
 //Will return either the whole name or buffer_len -1 bytes (needs to pad a trailing /0)
 byte A7105_Mesh_Util_GetRegisterNameStr(struct A7105_Mesh_Register* reg,char* buffer,int buffer_len);
 byte A7105_Mesh_Util_GetRegisterValueStr(struct A7105_Mesh_Register* reg,char* buffer,int buffer_len);
+byte A7105_Mesh_Util_GetRegisterValueU32(struct A7105_Mesh_Register* reg,uint32_t* dest);
 
+
+void A7105_Mesh_Register_Copy(struct A7105_Mesh_Register* dest, struct A7105_Mesh_Register* src);
 
 struct A7105_Mesh
 {
@@ -661,7 +674,7 @@ uint16_t A7105_Util_Get_Pkt_Unique_Id(byte* packet);
     * treat_as_request: Boolean whether we're expect the packet in node->packet_cache
                         to be treated as a request (true) or response (false)
 
-    Side-Effects/Nodes:
+    Side-Effects/Notes:
       * This function filters the packet in node->packet_cache
 
     This internal function is used to filter incoming packets to either debounce
@@ -678,4 +691,19 @@ uint16_t A7105_Util_Get_Pkt_Unique_Id(byte* packet);
 byte _A7105_Mesh_Filter_Packet(struct A7105_Mesh* node,
                                byte packet_type,
                                byte treat_as_request);
+
+/*
+  A7105_Mesh_Set_Registers:
+    * node: An initialized struct A7105_Mesh node
+    * regs: an array of A7105_Mesh_Registers that have been initialized and assigned names
+    * num_regs: The length of 'regs'.
+
+  Side-Effects/Notes:
+    - The list regs replaces any other list managed by 'node.' 
+    - Regs must not go out of scope for the lifetime of 'node' (it is not copied)
+    - The names of the registers in 'regs' must be unique
+*/
+void A7105_Mesh_Set_Node_Registers(struct A7105_Mesh* node,
+                              struct A7105_Mesh_Register* regs,
+                              byte num_regs);
 #endif

@@ -55,6 +55,43 @@ byte A7105_Mesh_Util_SetRegisterNameStr(struct A7105_Mesh_Register* reg,
   return (byte)A7105_MESH_MAX_REGISTER_PART_SIZE - reg->_name_len; 
 }
 
+byte A7105_Mesh_Util_SetRegisterValueStr(struct A7105_Mesh_Register* reg,
+                                        const char* value)
+{
+  unsigned long max_len = A7105_MESH_MAX_REGISTER_ARRAY_SIZE - reg->_name_len;
+
+  //Sanity check the length
+  if (max_len == 0 || strlen(value) > (max_len-1))
+    return false;
+
+  //Put the string (including trailing null) behind the name in the buffer
+  memcpy(&(reg->_data[reg->_name_len]),value,strlen(value)+1);
+  reg->_data_len = strlen(value)+1; //include the trailing /0 in our calculations
+  return true;
+}
+
+//Returns true or false based on success
+byte A7105_Mesh_Util_SetRegisterValueU32(struct A7105_Mesh_Register* reg,
+                                         const uint32_t value)
+{
+  unsigned long max_len = A7105_MESH_MAX_REGISTER_ARRAY_SIZE - reg->_name_len;
+
+  //Sanity check the length
+  if (max_len == 0 || 4 > max_len)
+    return false;
+
+  //Put the string (including trailing null) behind the name in the buffer
+  int offset = reg->_name_len;
+  reg->_data[offset++] = value >> 24 & 0xFF;
+  reg->_data[offset++] = value >> 16 & 0xFF;
+  reg->_data[offset++] = value >> 8 & 0xFF;
+  reg->_data[offset++] = value & 0xFF;
+  reg->_data_len = 4; //include the trailing /0 in our calculations
+  return true;
+}
+
+
+
 byte A7105_Mesh_Util_GetRegisterNameStr(struct A7105_Mesh_Register* reg,
                                         char* buffer,
                                         int buffer_len)
@@ -83,6 +120,32 @@ byte A7105_Mesh_Util_GetRegisterValueStr(struct A7105_Mesh_Register* reg,
   return (byte)bytes_to_copy;
 }
 
+byte A7105_Mesh_Util_GetRegisterValueU32(struct A7105_Mesh_Register* reg,uint32_t* dest)
+{
+  //Sanity check the length
+  if (reg->_data_len != 4)
+  {
+    return false;
+  }
+
+  //Put the string (including trailing null) behind the name in the buffer
+  int offset = reg->_name_len;
+  (*dest) = 0;
+  for (int x = 0;x<4;x++)
+  {
+    (*dest) <<= 8;
+    (*dest) |= reg->_data[offset+x];
+  }
+  return true;
+}
+
+void A7105_Mesh_Register_Copy(struct A7105_Mesh_Register* dest, struct A7105_Mesh_Register* src)
+{
+  dest->_name_len = src->_name_len;
+  dest->_data_len = src->_data_len;
+  memcpy(dest->_data,src->_data,A7105_MESH_MAX_REGISTER_ARRAY_SIZE);
+  memcpy(dest->_error_str,src->_error_str,A7105_MESH_MAX_REGISTER_PART_SIZE);
+}
 
 /////////////// A7105_Mesh Functions /////////////////////
 void A7105_Mesh_Set_Context(struct A7105_Mesh* node,void* context_obj)
@@ -426,7 +489,11 @@ A7105_Mesh_Status A7105_Mesh_Update(struct A7105_Mesh* node)
                                 A7105_Mesh_GET_REGISTER,
                                 A7105_MESH_REQUEST_TIMEOUT);
 
-  //Update SET_REGISTER activity 
+  //Check for timeout with SET_REGISTER 
+  _A7105_Mesh_Check_For_Timeout(node,
+                                A7105_Mesh_SET_REGISTER,
+                                A7105_MESH_REQUEST_TIMEOUT);
+
 
   //Update packet repeat activity 
   _A7105_Mesh_Update_Repeats(node);
@@ -911,16 +978,17 @@ void _A7105_Mesh_Handle_SetRegister(struct A7105_Mesh* node)
     //If the client has specified a SET_REGISTER callback for this Register, call it
     //now so they can update/populate the Register data
     byte error_set = false;
+    byte auto_set = false;
     if (node->registers[register_index].set_callback != NULL)
     {
-      byte ret = node->registers[register_index].get_callback(&(node->registers[register_index]),
+      byte ret = node->registers[register_index].set_callback(&(node->registers[register_index]),
                                                    node->client_context_obj);
       
       //If the callback says auto-set, just copy the value from the 
       //packet into the register
       if (ret == A7105_Mesh_AUTO_SET_REGISTER)
       {
-        //TODO
+        auto_set = true;
       }
       else if (ret == A7105_Mesh_INVALID_REGISTER_VALUE)
       {
@@ -942,10 +1010,24 @@ void _A7105_Mesh_Handle_SetRegister(struct A7105_Mesh* node)
       }
     }
 
+    //Handle no callback or autoset behavior
+    if (node->registers[register_index].set_callback == NULL ||
+        auto_set)
+    {
+      if (!_A7105_Mesh_Util_Packet_To_Register(node->packet_cache,
+                                          &(node->registers[register_index]),
+                                          true))
+      {
+        strncpy_P(node->registers[register_index]._error_str, (char*)pgm_read_word(&A7105_ERROR_STRINGS[SET_REG_INVALID_VALUE_SIZE]),A7105_MESH_MAX_REGISTER_PART_SIZE - 1);
+        error_set = true;
+      }
+    }
 
+    byte return_target = node->packet_cache[A7105_MESH_PACKET_NODE_ID];
     //Mark the request as handled and push back a SET_REGISTER packet
     _A7105_Mesh_Handling_Request(node, node->packet_cache);
     _A7105_Mesh_Prep_Packet_Header(node, A7105_MESH_PKT_SET_REGISTER_ACK);
+    node->packet_cache[A7105_MESH_PACKET_TARGET_ID] = return_target;
 
     //Copy the error from the register to the returning packet if it was set
     if (error_set)
@@ -955,14 +1037,6 @@ void _A7105_Mesh_Handle_SetRegister(struct A7105_Mesh* node)
               A7105_MESH_MAX_REGISTER_PART_SIZE - 1);
     }
 
-    //NOTE: The packet is zero'ed in Prep_Packet_Header so the zero's that should be there
-    //      on a successful set aren't set here
-
-    //Put the current register name/value in the response packet   
-    _A7105_Mesh_Util_Register_To_Packet(node->packet_cache,
-                                        &(node->registers[register_index]),
-                                        true);
- 
     _A7105_Mesh_Send_Response(node);
 
    //Zero out the register error for next time
@@ -973,7 +1047,7 @@ void _A7105_Mesh_Handle_SetRegister(struct A7105_Mesh* node)
 void _A7105_Mesh_Handle_SetRegisterAck(struct A7105_Mesh* node)
 {
   //If we sent a SET_REGISTER, and see a SET_REGISTER_VALUE_ACK come back addressed to us.
-  if (node->state == A7105_Mesh_GET_REGISTER &&
+  if (node->state == A7105_Mesh_SET_REGISTER &&
       _A7105_Mesh_Filter_Packet(node,A7105_MESH_PKT_SET_REGISTER_ACK,false) &&
       node->packet_cache[A7105_MESH_PACKET_TARGET_ID] == node->node_id)
   {
@@ -1014,9 +1088,11 @@ byte A7105_Get_Next_Present_Node(byte* presence_table, byte start)
   if (start == 0xFF)
     return 0;
 
-  for (byte x = start+1; x<=0xFF;x++)
+  for (byte x = start+1;x<0xFF;x++)
     if (presence_table[x/8] & (byte)(1<<(x%8)))
+    {
       return x;
+    }
 
   return 0;
 }
@@ -1120,6 +1196,7 @@ void _A7105_Mesh_Cache_Packet_For_Repeat(struct A7105_Mesh* node)
 
   //Don't repeat if this was a request addressed to us
   if ((node->packet_cache[A7105_MESH_PACKET_TYPE] == A7105_MESH_PKT_GET_NUM_REGISTERS ||
+      node->packet_cache[A7105_MESH_PACKET_TYPE] == A7105_MESH_PKT_SET_REGISTER_ACK ||
       node->packet_cache[A7105_MESH_PACKET_TYPE] == A7105_MESH_PKT_GET_REGISTER_NAME) &&
       node->packet_cache[A7105_MESH_PACKET_TARGET_ID] == node->node_id)
     return;
@@ -1142,14 +1219,11 @@ void _A7105_Mesh_Cache_Packet_For_Repeat(struct A7105_Mesh* node)
   if (node->packet_cache[A7105_MESH_PACKET_TYPE] == A7105_MESH_PKT_GET_REGISTER ||
       node->packet_cache[A7105_MESH_PACKET_TYPE] == A7105_MESH_PKT_SET_REGISTER)
   {
-    //DEBUG
-    /*
       //check the register names we service vs the packet
       for (int x = 0;x<node->num_registers;x++)
         if (_A7105_Mesh_Util_Does_Packet_Have_Register(node->packet_cache,
                                                   &(node->registers[x])))
           return;
-    */
   }   
 
   //Don't repeat if this packet has already been repeated
@@ -1183,7 +1257,7 @@ byte _A7105_Mesh_Util_Is_Same_Packet_Sans_Hop(byte* a, byte* b)
 void _A7105_Mesh_Prep_Packet_Header(struct A7105_Mesh* node,
                                     byte packet_type)
 {
-  //HACK: zero out the packet so our packet comparison function is easy to write
+  //HACK: zero out the packet so our packet comparison function is easy to write and any strings written as payload get automatically zero delimited
   memset(node->packet_cache,0,A7105_MESH_PACKET_SIZE);
 
 
@@ -1438,6 +1512,12 @@ void _A7105_Mesh_Handle_RX(struct A7105_Mesh* node)
   
   //Handle REGISTER_VALUE response
   _A7105_Mesh_Handle_RegisterValue(node);
+
+  //Handle SET_REGISTER request
+  _A7105_Mesh_Handle_SetRegister(node);
+
+  //Handle SET_REGISTER_ACK response
+  _A7105_Mesh_Handle_SetRegisterAck(node);
 }
 
 uint16_t A7105_Util_Get_Pkt_Unique_Id(byte* packet)
@@ -1476,4 +1556,13 @@ byte _A7105_Mesh_Filter_Packet(struct A7105_Mesh* node,
     return true;
 
   return false;
+}
+
+
+void A7105_Mesh_Set_Node_Registers(struct A7105_Mesh* node,
+                              struct A7105_Mesh_Register* regs,
+                              byte num_regs)
+{
+  node->registers = regs;
+  node->num_registers = num_regs;
 }
