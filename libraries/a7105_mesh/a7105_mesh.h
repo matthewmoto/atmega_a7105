@@ -115,7 +115,7 @@ struct A7105_Mesh_Register
                                      to be set automatically (i.e. callback is just
                                      a notifier).
   */
-  byte (*set_callback)(struct A7105_Mesh_Register*,void*);
+  A7105_Mesh_Status (*set_callback)(struct A7105_Mesh_Register*,struct A7105_Mesh* ,void*);
 
   /*
     Callback for when a node receives a "GET_REGISTER" request for this register.
@@ -127,7 +127,7 @@ struct A7105_Mesh_Register
                              to return (i.e. it has been set if it is dynamic).
       * (other returns for future versions)
   */
-  byte (*get_callback)(struct A7105_Mesh_Register*,void*);
+  A7105_Mesh_Status (*get_callback)(struct A7105_Mesh_Register*,void*);
 };
 
 /*
@@ -146,10 +146,10 @@ struct A7105_Mesh_Register
     portions and sets get/set callbacks (optionally).
 */
 void A7105_Mesh_Register_Initialize(struct A7105_Mesh_Register* reg,
-                                    byte (*set_callback)(struct A7105_Mesh_Register*,void*),
-                                    byte (*get_callback)(struct A7105_Mesh_Register*,void*));
+                                    A7105_Mesh_Status (*set_callback)(struct A7105_Mesh_Register*,struct A7105_Mesh*,void*),
+                                    A7105_Mesh_Status (*get_callback)(struct A7105_Mesh_Register*,void*));
 
-void A7105_Mesh_Register_Set_Error(struct A7105_Mesh_Register* reg, const char* error_msg);
+void A7105_Mesh_Register_Set_Error(struct A7105_Mesh* node, const char* error_msg);
 
 const char* A7105_Mesh_Register_Get_Error(struct A7105_Mesh_Register* reg);
 
@@ -501,7 +501,8 @@ void _A7105_Mesh_Handle_SetRegisterAck(struct A7105_Mesh* node);
 //////////////////////// Utility Functions ///////////////////////
 /*
   A7105_Get_Next_Present_Node:
-    * presence_table: The bitmask table to use for node presence (32 byte, 255 bit byte array)
+    * node: The A7105 node whose internal presence bitmask to use in finding the
+            next active node from the last PING
     * start: the node number to start (non-inclusive) Use 0 to start at the beginning.
 
     Returns: The node-id of the next node (after 'start') present on the mesh or 0 if no more nodes
@@ -510,7 +511,7 @@ void _A7105_Mesh_Handle_SetRegisterAck(struct A7105_Mesh* node);
   This utility function can be used to iterate over a presence table and get every node ID. Simply 
   start at 0 and pass the last returned ID on each iteration until 0 is returned.
 */
-byte A7105_Get_Next_Present_Node(byte* presence_table, byte start);
+byte A7105_Get_Next_Present_Node(struct A7105_Mesh* node, byte start);
 
 /*
   _A7105_Mesh_Is_Node_Idle:

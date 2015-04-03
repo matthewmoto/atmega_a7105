@@ -95,6 +95,23 @@ int freeRam ()
 }
 
 
+A7105_Mesh_Status get_register_called(A7105_Mesh_Register* reg, void* c)
+{
+  struct TestHarnessContext* ctx = (struct TestHarnessContext*)c;
+  putstring("GET_REGISTER called\r\n");
+  return A7105_Mesh_STATUS_OK;
+}
+
+A7105_Mesh_Status set_register_called(A7105_Mesh_Register* reg, A7105_Mesh* node, void* c)
+{
+  putstring("SET_REGISTER called\r\n");
+  //return A7105_Mesh_AUTO_SET_REGISTER;
+
+  //DEBUG to see if errors propagate right
+  A7105_Mesh_Register_Set_Error(node,"dunno, broke?");
+  return A7105_Mesh_INVALID_REGISTER_VALUE;
+}
+
 // the setup function runs once when you press reset or power the board
 void setup() {
   Serial.begin(115200);
@@ -157,7 +174,7 @@ void setup() {
   //initialize radio2's registers
   for (int x = 0;x<RADIO2_NUM_REGS;x++)
   {
-    A7105_Mesh_Register_Initialize(&(radio2_regs[x]),NULL,NULL);
+    A7105_Mesh_Register_Initialize(&(radio2_regs[x]),set_register_called,get_register_called);
     A7105_Mesh_Util_SetRegisterNameStr(&(radio2_regs[x]),RADIO2_REG_NAMES[x]);
     A7105_Mesh_Util_SetRegisterValueU32(&(radio2_regs[x]),x);
   }
@@ -302,7 +319,7 @@ void get_register_finished(struct A7105_Mesh* node, A7105_Mesh_Status status,voi
     Serial.print(node->responder_node_id);
     putstring("): \"");
 
-    byte success = A7105_Mesh_Util_GetRegisterValueU32(&(node->register_cache),&buffer);
+    A7105_Mesh_Util_GetRegisterValueU32(&(node->register_cache),&buffer);
 
     Serial.print(buffer);
     putstring("\"\r\n");
@@ -344,6 +361,13 @@ void set_register_finished(struct A7105_Mesh* node, A7105_Mesh_Status status,voi
     c->curr_state = R1_GET_NUM_REGS_DONE;
     c->curr_target_reg_index += 1;
   }
+
+  else if (status == A7105_Mesh_INVALID_REGISTER_VALUE)
+  {
+    putstring("remote node returned an error: (");
+    Serial.print((const char *)node->register_cache._data);
+    putstring(")\r\n");
+  }
 }
 
 
@@ -376,7 +400,7 @@ void loop() {
     Serial.println(context.curr_target_node);
 
     //Get the next node to query
-    context.curr_target_node = A7105_Get_Next_Present_Node(context.radio1.presence_table,context.curr_target_node);
+    context.curr_target_node = A7105_Get_Next_Present_Node(&(context.radio1),context.curr_target_node);
     
     putstring("New node is id: ");
     Serial.println(context.curr_target_node);

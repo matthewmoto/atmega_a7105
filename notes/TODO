@@ -1,15 +1,8 @@
-* move the error string from the Register object to the Node
-
-* update Get_Next_Present_Node to simply take a node object instead of the presence table
-  (but make sure we don't need it that way internally first)
-
-* Test SET_REGISTER and the set/get callbacks for Register objects
-
-* Continue the endless quest to reduce memory footprint
-
 * Decide how the user should receive notifications of value broadcasts
   (not directed from requests, but just general broadcasts) and if that
   is something we should even support...
+
+* Continue the endless quest to reduce memory footprint
 
 * Start thinking about ways to gaurantee uniqueness for the unique_id's
   Idea: Look for packets with a different node-id and the same unique-ID and 
@@ -26,9 +19,6 @@
         NOTE: we'll also have to disable our unique_ID filtering for the 
               pending operation if there is one when we do this so we don't 
               miss data.
-
-* Flesh out the remainder of the PACKET types and requests once the Mesh is
-  working with JOIN, PING, CONFLICT_NAME and GET_NUM_REGISTERS
 
 * test the auto rejoin feature by hacking the node-id of one of the radios
   to force it to rejoin and then complete whatever it was doing. Make sure

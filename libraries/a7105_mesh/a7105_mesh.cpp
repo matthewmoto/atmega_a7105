@@ -13,8 +13,8 @@ void DebugHeader(struct A7105_Mesh* node)
 //////////////// A7105_Register Functions ////////////////////
 
 void A7105_Mesh_Register_Initialize(struct A7105_Mesh_Register* reg,
-                                    byte (*set_callback)(struct A7105_Mesh_Register*,void*),
-                                    byte (*get_callback)(struct A7105_Mesh_Register*,void*))
+                                    A7105_Mesh_Status (*set_callback)(struct A7105_Mesh_Register*,struct A7105_Mesh*,void*),
+                                    A7105_Mesh_Status (*get_callback)(struct A7105_Mesh_Register*,void*))
 {
   memset(reg->_data,0,A7105_MESH_MAX_REGISTER_ARRAY_SIZE);
   reg->_name_len = 0;
@@ -25,12 +25,12 @@ void A7105_Mesh_Register_Initialize(struct A7105_Mesh_Register* reg,
   reg->get_callback = get_callback;
 }
 
-void A7105_Mesh_Register_Set_Error(struct A7105_Mesh_Register* reg, const char* error_msg)
+void A7105_Mesh_Register_Set_Error(struct A7105_Mesh* node, const char* error_msg)
 {
   //Zero out the error buffer and copy the message, but truncate before we overrun the buffer
-  memset(reg->_data,0,A7105_MESH_MAX_REGISTER_ARRAY_SIZE);
-  strncpy((char*)reg->_data,error_msg,A7105_MESH_MAX_REGISTER_PART_SIZE-1);
-  reg->_error_set = true;
+  memset(node->register_cache._data,0,A7105_MESH_MAX_REGISTER_ARRAY_SIZE);
+  strncpy((char*)node->register_cache._data,error_msg,A7105_MESH_MAX_REGISTER_PART_SIZE-1);
+  node->register_cache._error_set = true;
 }
 
 const char* A7105_Mesh_Register_Get_Error(struct A7105_Mesh_Register* reg)
@@ -986,6 +986,7 @@ void _A7105_Mesh_Handle_SetRegister(struct A7105_Mesh* node)
     if (node->registers[register_index].set_callback != NULL)
     {
       byte ret = node->registers[register_index].set_callback(&(node->registers[register_index]),
+                                                              node,
                                                    node->client_context_obj);
       
       //If the callback says auto-set, just copy the value from the 
@@ -999,7 +1000,7 @@ void _A7105_Mesh_Handle_SetRegister(struct A7105_Mesh* node)
         error_set = true;
 
         //Put a generic error in if none was specified
-        if (node->registers[register_index]._error_set == 0)
+        if (node->register_cache._error_set == 0)
         {
           strncpy_P((char*)node->register_cache._data, (char*)pgm_read_word(&A7105_ERROR_STRINGS[SET_REG_CB_NO_ERROR_SET]),A7105_MESH_MAX_REGISTER_PART_SIZE - 1);
         }
@@ -1090,13 +1091,13 @@ void _A7105_Mesh_Handle_SetRegisterAck(struct A7105_Mesh* node)
 
 //////////////////////// Utility Functions ///////////////////////
       
-byte A7105_Get_Next_Present_Node(byte* presence_table, byte start)
+byte A7105_Get_Next_Present_Node(struct A7105_Mesh* node, byte start)
 {
   if (start == 0xFF)
     return 0;
 
   for (byte x = start+1;x<0xFF;x++)
-    if (presence_table[x/8] & (byte)(1<<(x%8)))
+    if (node->presence_table[x/8] & (byte)(1<<(x%8)))
     {
       return x;
     }
