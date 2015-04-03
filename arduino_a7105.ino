@@ -47,7 +47,7 @@ void SerialPrint_P(PGM_P str) {
 } 
 
 
-void join_finished(struct A7105_Mesh* node, A7105_Mesh_Status status);
+void join_finished(struct A7105_Mesh* node, A7105_Mesh_Status status,void* context);
 
 A7105_Mesh radio1;
 A7105_Mesh radio2;
@@ -105,7 +105,6 @@ void setup() {
   //Try to make radio1 join the Mesh
   A7105_Mesh_Join(&radio1, join_finished);
 
-
   //initialize radio2's registers
   radio2.registers = (struct A7105_Mesh_Register*)malloc(sizeof(struct A7105_Mesh_Register)*1);
 
@@ -126,7 +125,7 @@ int freeRam ()
   return (int) &v - (__brkval == 0 ? (int) &__heap_start : (int) __brkval); 
 }
 
-void join_finished(struct A7105_Mesh* node, A7105_Mesh_Status status)
+void join_finished(struct A7105_Mesh* node, A7105_Mesh_Status status,void* context)
 {
   putstring("Node ");
   Serial.print(node->unique_id,HEX);
@@ -139,7 +138,7 @@ void join_finished(struct A7105_Mesh* node, A7105_Mesh_Status status)
     state = 2;
 }
 
-void get_num_registers_finished(struct A7105_Mesh* node, A7105_Mesh_Status status)
+void get_num_registers_finished(struct A7105_Mesh* node, A7105_Mesh_Status status,void* context)
 {
   putstring("Node ");
   Serial.print(node->unique_id,HEX);
@@ -161,7 +160,7 @@ void get_num_registers_finished(struct A7105_Mesh* node, A7105_Mesh_Status statu
   }
 }
 
-void get_register_name_finished(struct A7105_Mesh* node, A7105_Mesh_Status status)
+void get_register_name_finished(struct A7105_Mesh* node, A7105_Mesh_Status status,void* context)
 {
   char buffer[64];
   
@@ -189,7 +188,7 @@ void get_register_name_finished(struct A7105_Mesh* node, A7105_Mesh_Status statu
   }
 }
 
-void get_register_finished(struct A7105_Mesh* node, A7105_Mesh_Status status)
+void get_register_finished(struct A7105_Mesh* node, A7105_Mesh_Status status,void* context)
 {
   char buffer[64];
   
@@ -218,7 +217,7 @@ void get_register_finished(struct A7105_Mesh* node, A7105_Mesh_Status status)
 }
 
 
-void ping_finished(struct A7105_Mesh* node, A7105_Mesh_Status status)
+void ping_finished(struct A7105_Mesh* node, A7105_Mesh_Status status,void* context)
 {
   putstring("Node ");
   Serial.print(node->unique_id,HEX);
@@ -297,6 +296,7 @@ void loop() {
     putstring("Getting value of register 'a'...\r\n");
     A7105_Mesh_Register reg;
     reg._name_len = 1;
+    reg._data_len = 1;
     reg._data[0] = 'a';    
     A7105_Mesh_GetRegister(&radio1, &reg, get_register_finished);
     state = 9;

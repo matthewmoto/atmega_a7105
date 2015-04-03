@@ -1,3 +1,17 @@
+* Update the test harness to properly initialize the Register object
+
+* Update the test harness to use a state/context object instead of 
+  an ugly global state variable (this thing will be included in 
+  the final deliverable.
+
+* Test SET_REGISTER and the set/get callbacks for Register objects
+
+* Continue the endless quest to reduce memory footprint
+
+* Decide how the user should receive notifications of value broadcasts
+  (not directed from requests, but just general broadcasts) and if that
+  is something we should even support...
+
 * Start thinking about ways to gaurantee uniqueness for the unique_id's
   Idea: Look for packets with a different node-id and the same unique-ID and 
         send a new type of conflict packet.

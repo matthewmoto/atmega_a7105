@@ -242,7 +242,11 @@ is a maximum of 60 bytes long.
     * SET_REGISTER | HOP | NODE_ID | UNIQUE_ID |REGISTER_NAME_LEN | REGISTER_NAME | REGISTER_VALUE_LEN |REGISTER_VALUE
 
   If there is a node servicing that register (and the register can be set), it responds like this:
-    * SET_REGISTER_ACK | HOP | NODE_ID | UNIQUE_ID | TARGET_NODE_NUM 
+    * SET_REGISTER_ACK | HOP | NODE_ID | UNIQUE_ID | TARGET_NODE_NUM | ERR_MSG_DATA | NULL_BYTE
 
+    *NOTE: If there is an error setting a register and the managing node
+           wants it known (always a good idea), they should include an ascii 
+           error message at the tail (null terminated) explaining what happened
+           so the developer can easily diagnose issues.
 
-
+           If there is ERR_MSG_DATA before the NULL_BYTE, the register was set successfully.

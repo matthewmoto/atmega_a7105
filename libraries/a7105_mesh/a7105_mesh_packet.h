@@ -13,6 +13,7 @@
 #define A7105_MESH_PKT_GET_REGISTER        0x0A
 #define A7105_MESH_PKT_REGISTER_VALUE      0x0B
 #define A7105_MESH_PKT_SET_REGISTER        0x0C
+#define A7105_MESH_PKT_SET_REGISTER_ACK    0x0D
 
 #define A7105_MESH_PACKET_TYPE       0
 #define A7105_MESH_PACKET_HOP        1
@@ -22,5 +23,6 @@
 #define A7105_MESH_PACKET_DATA_START 5 //byte that starts the register name/value area
 #define A7105_MESH_PACKET_REG_INDEX  6 //byte that has register index for GET_REGISTER_NAME requests
 #define A7105_MESH_PACKET_NAME_START  6 //start index of the name data for GET_REGISTER/SET_REGISTER/REGISTER_NAME packets
+#define A7105_MESH_PACKET_ERR_MSG_START  6 //start index of the error message for SET_REGISTER_ACK packets
 
 #endif

@@ -10,6 +10,86 @@ void DebugHeader(struct A7105_Mesh* node)
   Serial.print(node->unique_id,HEX);
   putstring(") ");
 }
+//////////////// A7105_Register Functions ////////////////////
+
+void A7105_Mesh_Register_Initialize(struct A7105_Mesh_Register* reg,
+                                    byte (*set_callback)(struct A7105_Mesh_Register*,void*),
+                                    byte (*get_callback)(struct A7105_Mesh_Register*,void*))
+{
+  memset(reg->_data,0,A7105_MESH_MAX_REGISTER_ARRAY_SIZE);
+  reg->_name_len = 0;
+  reg->_data_len = 0;
+  memset(reg->_error_str,0,A7105_MESH_MAX_REGISTER_PART_SIZE);
+
+  reg->set_callback = set_callback;
+  reg->get_callback = get_callback;
+}
+
+void A7105_Mesh_Register_Set_Error(struct A7105_Mesh_Register* reg, const char* error_msg)
+{
+  //Zero out the error buffer and copy the message, but truncate before we overrun the buffer
+  memset(reg->_error_str,0,A7105_MESH_MAX_REGISTER_PART_SIZE);
+  strncpy(reg->_error_str,error_msg,A7105_MESH_MAX_REGISTER_PART_SIZE-1);
+}
+
+const char* A7105_Mesh_Register_Get_Error(struct A7105_Mesh_Register* reg)
+{
+  return reg->_error_str;
+}
+
+void _A7105_Mesh_Register_Clear_Error(struct A7105_Mesh_Register* reg)
+{
+  memset(reg->_error_str,0,A7105_MESH_MAX_REGISTER_PART_SIZE);
+}
+
+byte A7105_Mesh_Util_SetRegisterNameStr(struct A7105_Mesh_Register* reg,
+                                        const char* name)
+{
+  //Bail if the name is too long
+  if (A7105_MESH_MAX_REGISTER_PART_SIZE < strlen(name))
+    return 0;
+
+  reg->_name_len = (byte)strlen(name);
+  memcpy(reg->_data,name,reg->_name_len);
+
+  return (byte)A7105_MESH_MAX_REGISTER_PART_SIZE - reg->_name_len; 
+}
+
+byte A7105_Mesh_Util_GetRegisterNameStr(struct A7105_Mesh_Register* reg,
+                                        char* buffer,
+                                        int buffer_len)
+{
+  //cap our copy at 255 bytes and make sure we don't overrun the buffer
+  buffer_len = (buffer_len > 0xFF) ? 0xFF : buffer_len;
+  int bytes_to_copy = reg->_name_len > (buffer_len-1)?(buffer_len-1):reg->_name_len;
+
+  //copy the name and slap a null to end the string
+  memcpy(buffer,reg->_data,bytes_to_copy);
+  buffer[bytes_to_copy] = 0;
+  return (byte)bytes_to_copy;
+}
+
+byte A7105_Mesh_Util_GetRegisterValueStr(struct A7105_Mesh_Register* reg,
+                                        char* buffer,
+                                        int buffer_len)
+{
+  //cap our copy at 255 bytes and make sure we don't overrun the buffer
+  buffer_len = (buffer_len > 0xFF) ? 0xFF : buffer_len;
+  int bytes_to_copy = reg->_data_len > (buffer_len-1)?(buffer_len-1):reg->_data_len;
+
+  //copy the name and slap a null to end the string
+  memcpy(buffer,&(reg->_data[reg->_name_len]),bytes_to_copy);
+  buffer[bytes_to_copy] = 0;
+  return (byte)bytes_to_copy;
+}
+
+
+/////////////// A7105_Mesh Functions /////////////////////
+void A7105_Mesh_Set_Context(struct A7105_Mesh* node,void* context_obj)
+{
+  node->client_context_obj = context_obj;
+}
+
 
 A7105_Mesh_Status A7105_Mesh_Initialize(struct A7105_Mesh* node, 
                                         int chip_select_pin,
@@ -71,6 +151,7 @@ A7105_Mesh_Status A7105_Mesh_Initialize(struct A7105_Mesh* node,
     memset(node->repeat_cache[x],0,A7105_MESH_PACKET_SIZE);
 
   //Client Data Storage Cache
+  node->client_context_obj = NULL;
   node->num_registers_cache = 0;
   memset(node->packet_cache,0,A7105_MESH_PACKET_SIZE);
   node->operation_callback = NULL;
@@ -96,7 +177,8 @@ A7105_Mesh_Status A7105_Mesh_Initialize(struct A7105_Mesh* node,
 }
 
 void _blocking_op_finished(struct A7105_Mesh* node,
-                             A7105_Mesh_Status status)
+                           A7105_Mesh_Status status,
+                           void* context)
 {
   //Set the operation_status so the original function can
   //realize we're done and return the value
@@ -108,7 +190,8 @@ void _blocking_op_finished(struct A7105_Mesh* node,
 //mid-operation. This restores the state pre-interrupt and 
 //pushes the original packet again with the new node-id
 void _rejoin_finished(struct A7105_Mesh* node,
-                             A7105_Mesh_Status status)
+                             A7105_Mesh_Status status,
+                             void* context)
 {
   //If we get here, we've rejoined as a different node ID.
   //Restore our pre-rejoin state
@@ -127,19 +210,19 @@ void _rejoin_finished(struct A7105_Mesh* node,
 }
   
 A7105_Mesh_Status A7105_Mesh_Join(struct A7105_Mesh* node, 
-                                  void (*join_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status))
+                                  void (*join_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status,void*))
 {
   return A7105_Mesh_Join(node, 1, join_finished_callback, false);
 }
 A7105_Mesh_Status A7105_Mesh_Join(struct A7105_Mesh* node, 
                                   byte node_id,
-                                  void (*join_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status))
+                                  void (*join_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status,void*))
 {
   return A7105_Mesh_Join(node, node_id, join_finished_callback, false);
 }
 A7105_Mesh_Status A7105_Mesh_Join(struct A7105_Mesh* node, 
                                   byte node_id,
-                                  void (*join_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status),
+                                  void (*join_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status,void*),
                                   byte interrupting)
 {
   //TODO: Implement mesh-full behavior and make sure the failure
@@ -211,7 +294,7 @@ void _A7105_Mesh_Update_Join(struct A7105_Mesh* node)
   if (millis() - node->join_first_tx_time > A7105_MESH_JOIN_ACCEPT_DELAY)
   {
     node->state = A7105_Mesh_IDLE;
-    node->operation_callback(node, A7105_Mesh_STATUS_OK);
+    node->operation_callback(node, A7105_Mesh_STATUS_OK, node->client_context_obj);
   }
 
   //Otherwise do we need to send another JOIN packet?
@@ -356,7 +439,7 @@ A7105_Mesh_Status A7105_Mesh_Update(struct A7105_Mesh* node)
 
 
 A7105_Mesh_Status A7105_Mesh_Ping(struct A7105_Mesh* node, 
-                                  void (*ping_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status))
+                                  void (*ping_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status,void*))
 {
   //Check our status (make sure we are on a mesh and not busy)
   A7105_Mesh_Status ret;
@@ -445,20 +528,20 @@ void _A7105_Mesh_Update_Ping(struct A7105_Mesh* node)
     putstring(" other nodes\r\n");
 
     node->state = A7105_Mesh_IDLE;
-    node->operation_callback(node, A7105_Mesh_STATUS_OK);
+    node->operation_callback(node, A7105_Mesh_STATUS_OK,node->client_context_obj);
   }
 }
 
 A7105_Mesh_Status A7105_Mesh_GetNumRegisters(struct A7105_Mesh* node,
                                              byte node_id,
-                                             void (*get_num_registers_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status))
+                                             void (*get_num_registers_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status,void*))
 {
   return A7105_Mesh_GetNumRegisters(node, node_id, 0,get_num_registers_finished_callback);
 }
 A7105_Mesh_Status A7105_Mesh_GetNumRegisters(struct A7105_Mesh* node,
                                              byte node_id,
                                              uint16_t target_unique_id,
-                                             void (*get_num_registers_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status))
+                                             void (*get_num_registers_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status,void*))
 {
   //Make sure we're idle on a mesh
   A7105_Mesh_Status ret;
@@ -528,7 +611,7 @@ void _A7105_Mesh_Handle_NumRegisters(struct A7105_Mesh* node)
 
     //Update our status back to IDLE
     node->state = A7105_Mesh_IDLE;
-    node->operation_callback(node, A7105_Mesh_STATUS_OK);
+    node->operation_callback(node, A7105_Mesh_STATUS_OK,node->client_context_obj);
   }
 
 }
@@ -536,7 +619,7 @@ void _A7105_Mesh_Handle_NumRegisters(struct A7105_Mesh* node)
 A7105_Mesh_Status A7105_Mesh_GetRegisterName(struct A7105_Mesh* node,
                                              byte node_id,
                                              byte reg_index,
-                                             void (*get_register_name_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status))
+                                             void (*get_register_name_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status,void*))
 {
   return A7105_Mesh_GetRegisterName(node,node_id,reg_index,0,get_register_name_finished_callback);
 }
@@ -545,7 +628,7 @@ A7105_Mesh_Status A7105_Mesh_GetRegisterName(struct A7105_Mesh* node,
                                              byte node_id,
                                              byte reg_index,
                                              uint16_t filter_unique_id,
-                                             void (*get_register_name_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status))
+                                             void (*get_register_name_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status,void*))
 {
   //Make sure we're idle on a mesh
   A7105_Mesh_Status ret;
@@ -635,23 +718,18 @@ void _A7105_Mesh_Handle_RegisterName(struct A7105_Mesh* node)
 
     //Update our status back to IDLE
     node->state = A7105_Mesh_IDLE;
-    node->operation_callback(node, ret);
+    node->operation_callback(node, ret, node->client_context_obj);
   }
 }
 
 A7105_Mesh_Status A7105_Mesh_GetRegister(struct A7105_Mesh* node,
                                          struct A7105_Mesh_Register* reg,
-                                         void (*get_register_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status))
+                                         void (*get_register_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status,void*))
 {
   //Make sure we're idle on a mesh
   A7105_Mesh_Status ret;
   if ((ret = _A7105_Mesh_Is_Node_Idle(node)) != A7105_Mesh_STATUS_OK)
     return ret;
-
-  //Ensure the register name is a valid length
-  if (reg->_name_len == 0 ||
-      reg->_name_len > A7105_MESH_MAX_REGISTER_PART_SIZE)
-    return A7105_Mesh_INVALID_REGISTER_LENGTH;
 
   //Update our state and target filters
   node->state = A7105_Mesh_GET_REGISTER;
@@ -666,9 +744,14 @@ A7105_Mesh_Status A7105_Mesh_GetRegister(struct A7105_Mesh* node,
 
   //Prep the GET_REGISTER packet
   _A7105_Mesh_Prep_Packet_Header(node, A7105_MESH_PKT_GET_REGISTER);
-  _A7105_Mesh_Util_Register_To_Packet(node->packet_cache,
-                                      reg,
-                                      false);
+
+  //Bail if the Register structure had invalid lengths/data
+  if (!_A7105_Mesh_Util_Register_To_Packet(node->packet_cache,
+                                                 reg,
+                                                 false))
+  {
+    return A7105_Mesh_INVALID_REGISTER_LENGTH;
+  }
 
   //Push the request to the radio
   _A7105_Mesh_Send_Request(node);
@@ -693,6 +776,7 @@ void _A7105_Mesh_Handle_GetRegister(struct A7105_Mesh* node)
       node->state != A7105_Mesh_JOINING &&
       _A7105_Mesh_Filter_Packet(node,A7105_MESH_PKT_GET_REGISTER,true))
   {
+
     //bail if this isn't a register we service (otherwise, we'll have the index)
     int register_index = -1;
     if ((register_index = _A7105_Mesh_Filter_RegisterName(node)) == -1)
@@ -701,6 +785,12 @@ void _A7105_Mesh_Handle_GetRegister(struct A7105_Mesh* node)
     //Mark the request as handled and push back a REGISTER_VALUE packet
     _A7105_Mesh_Handling_Request(node, node->packet_cache);
     _A7105_Mesh_Prep_Packet_Header(node, A7105_MESH_PKT_REGISTER_VALUE);
+
+    //If the client has specified a GET_REGISTER callback for this Register, call it
+    //now so they can update/populate the Register data
+    if (node->registers[register_index].get_callback != NULL)
+      node->registers[register_index].get_callback(&(node->registers[register_index]),
+                                                   node->client_context_obj);
 
     //Put the current register name/value in the response packet   
     _A7105_Mesh_Util_Register_To_Packet(node->packet_cache,
@@ -740,7 +830,7 @@ void _A7105_Mesh_Handle_RegisterValue(struct A7105_Mesh* node)
 
     //Update our status back to IDLE
     node->state = A7105_Mesh_IDLE;
-    node->operation_callback(node, ret);
+    node->operation_callback(node, ret, node->client_context_obj);
   }
 }
 
@@ -753,10 +843,168 @@ void _A7105_Mesh_Check_For_Timeout(struct A7105_Mesh* node,
   {
     //Update our status back to IDLE and mark the request as a timeout
     node->state = A7105_Mesh_IDLE;
-    node->operation_callback(node, A7105_Mesh_TIMEOUT);
+    node->operation_callback(node, A7105_Mesh_TIMEOUT, node->client_context_obj);
   }
 }
 
+A7105_Mesh_Status A7105_Mesh_SetRegister(struct A7105_Mesh* node,
+                                         struct A7105_Mesh_Register* reg,
+                                         void (*set_register_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status,void*))
+{
+  //Make sure we're idle on a mesh
+  A7105_Mesh_Status ret;
+  if ((ret = _A7105_Mesh_Is_Node_Idle(node)) != A7105_Mesh_STATUS_OK)
+    return ret;
+
+  //Update our state and target filters
+  node->state = A7105_Mesh_SET_REGISTER;
+  //reset target filters, SET_REGISTER is a global operation
+  node->target_node_id = 0; 
+  node->target_unique_id = 0; 
+
+  //Set our completed callback
+  _A7105_Mesh_Prep_Finishing_Callback(node,
+                                      set_register_finished_callback,
+                                      _blocking_op_finished);
+
+  //Prep the SET_REGISTER packet
+  _A7105_Mesh_Prep_Packet_Header(node, A7105_MESH_PKT_SET_REGISTER);
+
+  //Bail if the Register structure had invalid lengths/data
+  if (!_A7105_Mesh_Util_Register_To_Packet(node->packet_cache,
+                                                 reg,
+                                                 true))
+  {
+    return A7105_Mesh_INVALID_REGISTER_LENGTH;
+  }
+
+  //Push the request to the radio
+  _A7105_Mesh_Send_Request(node);
+    
+  //If no callback was specified, block until we get a status value
+  if (set_register_finished_callback == NULL)
+  {
+    while (node->blocking_operation_status == A7105_Mesh_NO_STATUS)
+      A7105_Mesh_Update(node);
+
+    return node->blocking_operation_status;
+  }
+
+  //Otherwise just return an OK status
+  return A7105_Mesh_STATUS_OK;
+
+}
+
+void _A7105_Mesh_Handle_SetRegister(struct A7105_Mesh* node)
+{
+  //If we're on a mesh and we see a SET_REGISTER request
+  if (node->state != A7105_Mesh_NOT_JOINED &&
+      node->state != A7105_Mesh_JOINING &&
+      _A7105_Mesh_Filter_Packet(node,A7105_MESH_PKT_SET_REGISTER,true))
+  {
+
+    //bail if this isn't a register we service (otherwise, we'll have the index)
+    int register_index = -1;
+    if ((register_index = _A7105_Mesh_Filter_RegisterName(node)) == -1)
+      return; 
+
+    //If the client has specified a SET_REGISTER callback for this Register, call it
+    //now so they can update/populate the Register data
+    byte error_set = false;
+    if (node->registers[register_index].set_callback != NULL)
+    {
+      byte ret = node->registers[register_index].get_callback(&(node->registers[register_index]),
+                                                   node->client_context_obj);
+      
+      //If the callback says auto-set, just copy the value from the 
+      //packet into the register
+      if (ret == A7105_Mesh_AUTO_SET_REGISTER)
+      {
+        //TODO
+      }
+      else if (ret == A7105_Mesh_INVALID_REGISTER_VALUE)
+      {
+        error_set = true;
+
+        //Put a generic error in if none was specified
+        if (strlen(node->registers[register_index]._error_str) == 0)
+        {
+          strncpy_P(node->registers[register_index]._error_str, (char*)pgm_read_word(&A7105_ERROR_STRINGS[SET_REG_CB_NO_ERROR_SET]),A7105_MESH_MAX_REGISTER_PART_SIZE - 1);
+        }
+      }
+
+      //If the callback return something other than "OK"
+      //Let's mark it as an error for the caller so they aren't 
+      //left wondering
+      else if (ret != A7105_Mesh_STATUS_OK)
+      {
+        strncpy_P(node->registers[register_index]._error_str, (char*)pgm_read_word(&A7105_ERROR_STRINGS[SET_REG_CB_BOGUS_RETURN]),A7105_MESH_MAX_REGISTER_PART_SIZE - 1);
+      }
+    }
+
+
+    //Mark the request as handled and push back a SET_REGISTER packet
+    _A7105_Mesh_Handling_Request(node, node->packet_cache);
+    _A7105_Mesh_Prep_Packet_Header(node, A7105_MESH_PKT_SET_REGISTER_ACK);
+
+    //Copy the error from the register to the returning packet if it was set
+    if (error_set)
+    {
+      strncpy((char*)&(node->packet_cache[A7105_MESH_PACKET_ERR_MSG_START]),
+              node->registers[register_index]._error_str,
+              A7105_MESH_MAX_REGISTER_PART_SIZE - 1);
+    }
+
+    //NOTE: The packet is zero'ed in Prep_Packet_Header so the zero's that should be there
+    //      on a successful set aren't set here
+
+    //Put the current register name/value in the response packet   
+    _A7105_Mesh_Util_Register_To_Packet(node->packet_cache,
+                                        &(node->registers[register_index]),
+                                        true);
+ 
+    _A7105_Mesh_Send_Response(node);
+
+   //Zero out the register error for next time
+   _A7105_Mesh_Register_Clear_Error(&(node->registers[register_index]));
+  }
+}
+
+void _A7105_Mesh_Handle_SetRegisterAck(struct A7105_Mesh* node)
+{
+  //If we sent a SET_REGISTER, and see a SET_REGISTER_VALUE_ACK come back addressed to us.
+  if (node->state == A7105_Mesh_GET_REGISTER &&
+      _A7105_Mesh_Filter_Packet(node,A7105_MESH_PKT_SET_REGISTER_ACK,false) &&
+      node->packet_cache[A7105_MESH_PACKET_TARGET_ID] == node->node_id)
+  {
+    A7105_Mesh_Status ret = A7105_Mesh_STATUS_OK;
+
+    //Check if there is an error message set and, if so, set the 
+    //error message for the register cache so the client code can
+    //"see and smells things" 
+    if (node->packet_cache[A7105_MESH_PACKET_ERR_MSG_START] != 0)
+    {
+      //Set the return value
+      ret = A7105_Mesh_INVALID_REGISTER_VALUE;
+      //clear the register cache error (zero it out)
+      _A7105_Mesh_Register_Clear_Error(&(node->register_cache));
+      //copy the error string from the packet
+      strncpy(node->register_cache._error_str,
+              (char*)&(node->packet_cache[A7105_MESH_PACKET_ERR_MSG_START]),
+              A7105_MESH_MAX_REGISTER_PART_SIZE - 1);
+
+    }
+
+    //Record the responder info
+    node->responder_node_id = node->packet_cache[A7105_MESH_PACKET_NODE_ID]; 
+    node->responder_unique_id = A7105_Util_Get_Pkt_Unique_Id(node->packet_cache);
+
+    //Update our status back to IDLE
+    node->state = A7105_Mesh_IDLE;
+    node->operation_callback(node, ret, node->client_context_obj);
+  }
+
+}
 
 
 //////////////////////// Utility Functions ///////////////////////
@@ -833,7 +1081,7 @@ void _A7105_Mesh_Update_Repeats(struct A7105_Mesh* node)
     //DEBUG (print packet to serial)
     DebugHeader(node);
     putstring("REPEAT:[");
-    for (int x = 0; x<5;x++)
+    for (int x = 0; x<6;x++)
     {
       Serial.print(packet[x],HEX);
       putstring("] [");
@@ -963,7 +1211,7 @@ void _A7105_Mesh_Send_Response(struct A7105_Mesh* node)
   //DEBUG (print packet to serial)
   DebugHeader(node);
   putstring("TX:[");
-  for (int x = 0; x<5;x++)
+  for (int x = 0; x<6;x++)
   {
     Serial.print(node->packet_cache[x],HEX);
     putstring("] [");
@@ -1078,33 +1326,6 @@ byte _A7105_Mesh_Util_Packet_To_Register(byte* packet,
   return true;
 }
 
-byte A7105_Mesh_Util_GetRegisterNameStr(struct A7105_Mesh_Register* reg,
-                                        char* buffer,
-                                        int buffer_len)
-{
-  //cap our copy at 255 bytes and make sure we don't overrun the buffer
-  buffer_len = (buffer_len > 0xFF) ? 0xFF : buffer_len;
-  int bytes_to_copy = reg->_name_len > (buffer_len-1)?(buffer_len-1):reg->_name_len;
-
-  //copy the name and slap a null to end the string
-  memcpy(buffer,reg->_data,bytes_to_copy);
-  buffer[bytes_to_copy] = 0;
-  return (byte)bytes_to_copy;
-}
-
-byte A7105_Mesh_Util_GetRegisterValueStr(struct A7105_Mesh_Register* reg,
-                                        char* buffer,
-                                        int buffer_len)
-{
-  //cap our copy at 255 bytes and make sure we don't overrun the buffer
-  buffer_len = (buffer_len > 0xFF) ? 0xFF : buffer_len;
-  int bytes_to_copy = reg->_data_len > (buffer_len-1)?(buffer_len-1):reg->_data_len;
-
-  //copy the name and slap a null to end the string
-  memcpy(buffer,&(reg->_data[reg->_name_len]),bytes_to_copy);
-  buffer[bytes_to_copy] = 0;
-  return (byte)bytes_to_copy;
-}
 int _A7105_Mesh_Filter_RegisterName(struct A7105_Mesh* node)
 {
   for (int x = 0;x<node->num_registers;x++)
@@ -1120,6 +1341,7 @@ byte _A7105_Mesh_Cmp_Packet_Register_Name(byte* packet,
                                           struct A7105_Mesh_Register* reg)
 {
   byte expected_len = packet[A7105_MESH_PACKET_DATA_START];
+
   if (reg->_name_len == expected_len &&
       memcmp(reg->_data,
              &(packet[A7105_MESH_PACKET_NAME_START]),
@@ -1137,8 +1359,8 @@ void _A7105_Mesh_Handling_Request(struct A7105_Mesh* node,
 }
 
 void _A7105_Mesh_Prep_Finishing_Callback(struct A7105_Mesh* node,
-                                             void (*user_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status),
-                                             void (*blocking_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status))
+                                             void (*user_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status,void*),
+                                             void (*blocking_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status,void*))
 {
   //Set blocking state vars
   node->blocking_operation_status = A7105_Mesh_NO_STATUS;
@@ -1171,7 +1393,7 @@ void _A7105_Mesh_Handle_RX(struct A7105_Mesh* node)
 
   DebugHeader(node);
   putstring("RX:[");
-  for (int x = 0; x<5;x++)
+  for (int x = 0; x<6;x++)
   {
     Serial.print(node->packet_cache[x],HEX);
     putstring("] [");

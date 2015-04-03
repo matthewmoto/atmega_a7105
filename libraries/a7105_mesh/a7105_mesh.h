@@ -47,6 +47,19 @@
 #define putstring(x) SerialPrint_P(PSTR(x))
 void SerialPrint_P(PGM_P str);
 
+//Error messages to include with SET_REGISTER packets
+//when the callback doesn't work correctly
+//(The PROGMEM stuff and #defines are a bunch of
+//shenanegans to avoid eating up extra RAM with 
+//strings. The memory is tight on these little AVR chips...)
+#define SET_REG_CB_NO_ERROR_SET 0
+#define SET_REG_CB_BOGUS_RETURN 1
+const char ERR_STR1[] PROGMEM = "Unknown Error (not set)";
+const char ERR_STR2[] PROGMEM = "Remote Callback Error";
+
+const char* const A7105_ERROR_STRINGS[] PROGMEM = {ERR_STR1, ERR_STR2};
+
+
 enum A7105_Mesh_State{
   A7105_Mesh_NOT_JOINED,
   A7105_Mesh_JOINING,
@@ -65,6 +78,7 @@ enum A7105_Mesh_Status{
   A7105_Mesh_INVALID_REGISTER_INDEX,
   A7105_Mesh_INVALID_REGISTER_LENGTH,
   A7105_Mesh_INVALID_REGISTER_RETURNED,
+  A7105_Mesh_INVALID_REGISTER_VALUE, //returned by remote node
   A7105_Mesh_NOT_ON_MESH,
   A7105_Mesh_BUSY,
   A7105_Mesh_MESH_FULL,
@@ -72,6 +86,8 @@ enum A7105_Mesh_Status{
   A7105_Mesh_RADIO_INIT_ERROR,
   A7105_Mesh_RADIO_CALIBRATION_ERROR,
   A7105_Mesh_RADIO_INVALID_CHANNEL,
+  A7105_Mesh_SET_REGISTER_REQUESTED,
+  A7105_Mesh_AUTO_SET_REGISTER,
 };
 
 struct A7105_Mesh_Register
@@ -80,7 +96,73 @@ struct A7105_Mesh_Register
   byte _data[A7105_MESH_MAX_REGISTER_ARRAY_SIZE];
   byte _name_len; 
   byte _data_len;
+  
+  //buffer for errors in SET_REGISTER_ACK
+  //NOTE: Can we put this someplace else?
+  char _error_str[A7105_MESH_MAX_REGISTER_PART_SIZE];
+  /*
+    Callback for when a node receives a "SET_REGISTER" request for this register.
+    If this is NULL, the value passed in a SET_REGISTER request will be assigned
+    verbatim.
+
+    This callback should return:
+      * A7105_Mesh_STATUS_OK if the register was updated successfully.
+      * A7105_Mesh_INVALID_REGISTER_VALUE if there was an error setting the register
+        NOTE: If this is returned, A7105_Mesh_Register_Set_Error() MUST be called 
+              to populate the register with an error.
+      * A7105_Mesh_AUTO_SET_REGISTER If the callback would just like the register to
+                                     to be set automatically (i.e. callback is just
+                                     a notifier).
+  */
+  byte (*set_callback)(struct A7105_Mesh_Register*,void*);
+
+  /*
+    Callback for when a node receives a "GET_REGISTER" request for this register.
+    If this is NULL, the value passed in a GET_REGISTER request will be assigned
+    verbatim.
+
+    This callback should return:
+      * A7105_Mesh_STATUS_OK if the register value in the first parameter is acceptable
+                             to return (i.e. it has been set if it is dynamic).
+      * (other returns for future versions)
+  */
+  byte (*get_callback)(struct A7105_Mesh_Register*,void*);
 };
+
+/*
+  A7105_Mesh_Register_Initialize:
+    * reg: pointer to an existing A7105_Mesh_Register object
+    * set_callback: A function to call whenever the register in question 
+                    has a SET_REGISTER request made to it via the containing A7105_Mesh node 
+                    or NULL if the register should be set verbatim via mesh requests.
+    * get_callback:
+
+    Side-Effects/Notes: See the descriptions above for get/set callbacks to 
+                        understand how they should behave and what they should return
+                        if you implement your own.
+
+    This function initializes a A7105_Mesh_Register structure. It zero's the data
+    portions and sets get/set callbacks (optionally).
+*/
+void A7105_Mesh_Register_Initialize(struct A7105_Mesh_Register* reg,
+                                    byte (*set_callback)(struct A7105_Mesh_Register*,void*),
+                                    byte (*get_callback)(struct A7105_Mesh_Register*,void*));
+
+void A7105_Mesh_Register_Set_Error(struct A7105_Mesh_Register* reg, const char* error_msg);
+
+const char* A7105_Mesh_Register_Get_Error(struct A7105_Mesh_Register* reg);
+
+void _A7105_Mesh_Register_Clear_Error(struct A7105_Mesh_Register* reg);
+
+//Returns the length (in bytes) avialable for the register value or 0 on error.
+byte A7105_Mesh_Util_SetRegisterNameStr(struct A7105_Mesh_Register* reg,
+                                        const char* name);
+
+//Returns length of register name
+//Will return either the whole name or buffer_len -1 bytes (needs to pad a trailing /0)
+byte A7105_Mesh_Util_GetRegisterNameStr(struct A7105_Mesh_Register* reg,char* buffer,int buffer_len);
+byte A7105_Mesh_Util_GetRegisterValueStr(struct A7105_Mesh_Register* reg,char* buffer,int buffer_len);
+
 
 struct A7105_Mesh
 {
@@ -120,15 +202,16 @@ struct A7105_Mesh
   unsigned long last_repeat_sent_time;
 
   ///// Client Data Storage Cache //////
+  void* client_context_obj; 
   byte num_registers_cache; 
   A7105_Mesh_Register register_cache; //HACK: used as cache for GET_REGISTER/SET_REGISTER requests
   byte responder_node_id; 
   uint16_t responder_unique_id; 
-  void (*operation_callback)(struct A7105_Mesh*,A7105_Mesh_Status);
+  void (*operation_callback)(struct A7105_Mesh*,A7105_Mesh_Status,void*);
   A7105_Mesh_Status blocking_operation_status; //Used to store the return status during blocking interface usage
 
   ///// Auto Rejoin State Cache //////
-  void (*pending_operation_callback)(struct A7105_Mesh*,A7105_Mesh_Status);
+  void (*pending_operation_callback)(struct A7105_Mesh*,A7105_Mesh_Status,void*);
   A7105_Mesh_State pending_state;
   byte pending_target_node_id;
   byte pending_target_unique_id;
@@ -137,6 +220,9 @@ struct A7105_Mesh
                            //due to a re-join from a node-id conflict
 
 };
+
+
+void A7105_Mesh_Set_Context(struct A7105_Mesh* node,void* context_obj);
 
 /*
   A7105_Mesh_Initialize:
@@ -188,16 +274,16 @@ A7105_Mesh_Status A7105_Mesh_Initialize(struct A7105_Mesh* node,
       * A7105_Mesh_MESH_FULL if the mesh already has 255 nodes.     
 */
 A7105_Mesh_Status A7105_Mesh_Join(struct A7105_Mesh* node, 
-                                  void (*join_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status));
+                                  void (*join_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status,void*));
 
 A7105_Mesh_Status A7105_Mesh_Join(struct A7105_Mesh* node, 
                                   byte node_id,
-                                  void (*join_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status));
+                                  void (*join_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status,void*));
 
 
 A7105_Mesh_Status A7105_Mesh_Join(struct A7105_Mesh* node, 
                                   byte node_id,
-                                  void (*join_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status),
+                                  void (*join_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status,void*),
                                   byte interrupting);
 
 void _A7105_Mesh_Update_Join(struct A7105_Mesh* node);
@@ -239,7 +325,7 @@ A7105_Mesh_Status A7105_Mesh_Update(struct A7105_Mesh* node);
         * A7105_Mesh_BUSY if 'node' is currently performing a different operation
 */
 A7105_Mesh_Status A7105_Mesh_Ping(struct A7105_Mesh* node, 
-                                  void (*ping_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status));
+                                  void (*ping_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status,void*));
 
 void _A7105_Mesh_Handle_Ping(struct A7105_Mesh* node);
 void _A7105_Mesh_Handle_Pong(struct A7105_Mesh* node);
@@ -270,11 +356,11 @@ void _A7105_Mesh_Update_Ping(struct A7105_Mesh* node);
 */
 A7105_Mesh_Status A7105_Mesh_GetNumRegisters(struct A7105_Mesh* node, 
                                              byte node_id, 
-                                             void (*get_num_registers_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status)); 
+                                             void (*get_num_registers_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status,void*)); 
 A7105_Mesh_Status A7105_Mesh_GetNumRegisters(struct A7105_Mesh* node, 
                                              byte node_id, 
                                              uint16_t target_unique_id,
-                                             void (*get_num_registers_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status)); 
+                                             void (*get_num_registers_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status,void*)); 
 
 void _A7105_Mesh_Handle_GetNumRegisters(struct A7105_Mesh* node);
 void _A7105_Mesh_Handle_NumRegisters(struct A7105_Mesh* node);
@@ -309,13 +395,13 @@ void _A7105_Mesh_Handle_NumRegisters(struct A7105_Mesh* node);
 A7105_Mesh_Status A7105_Mesh_GetRegisterName(struct A7105_Mesh* node, 
                                              byte node_id, 
                                              byte reg_index, 
-                                             void (*get_register_name_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status)); 
+                                             void (*get_register_name_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status,void*)); 
 
 A7105_Mesh_Status A7105_Mesh_GetRegisterName(struct A7105_Mesh* node, 
                                              byte node_id, 
                                              byte reg_index, 
                                              uint16_t filter_unique_id,
-                                             void (*get_register_name_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status)); 
+                                             void (*get_register_name_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status,void*)); 
 
 void _A7105_Mesh_Handle_GetRegisterName(struct A7105_Mesh* node);
 void _A7105_Mesh_Handle_RegisterName(struct A7105_Mesh* node);
@@ -346,7 +432,7 @@ void _A7105_Mesh_Handle_RegisterName(struct A7105_Mesh* node);
 */
 A7105_Mesh_Status A7105_Mesh_GetRegister(struct A7105_Mesh* node, 
                                          struct A7105_Mesh_Register* reg, 
-                                         void (*get_register_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status)); 
+                                         void (*get_register_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status,void*)); 
 
 void _A7105_Mesh_Handle_GetRegister(struct A7105_Mesh* node);
 void _A7105_Mesh_Handle_RegisterValue(struct A7105_Mesh* node);
@@ -380,18 +466,24 @@ void _A7105_Mesh_Check_For_Timeout(struct A7105_Mesh* node,
                           This does not garantee it will be that value during the next read, but does gaurantee that
                           it has been set successfully.
                           Otherwise, an error status will be returned or sent to the callback (if specified).
+    
+                          'reg' is not accessed again after this function (writing to non-cache memory is too risky
+                          since it could crash weirdly if we reference something that went out of scope).
 
       Returns:
         * A7105_Mesh_STATUS_OK on success or if get_num_registers_callback is NULL.
         * A7105_Mesh_TIMEOUT if the operation finished without getting any response from the target node.
         * A7105_Mesh_BUSY if 'node' is currently performing a different operation
+        * A7105_Mesh_INVALID_REGISTER_LENGTH if the specified register name is either too long (or zero length).
+        * A7105_Mesh_INVALID_REGISTER_VALUE if the node managing the register would not except the value sent
 */
-    A7105_Mesh_Status A7105_Mesh_SetRegister(struct A7105_Mesh* node, 
-                                             byte* register_name, 
-                                             byte register_name_len,
-                                             byte* register_value, 
-                                             byte register_value_len,
-                                             void (*set_register_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status)); 
+A7105_Mesh_Status A7105_Mesh_SetRegister(struct A7105_Mesh* node, 
+                                         struct A7105_Mesh_Register* reg,
+                                         void (*set_register_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status,void*)); 
+
+void _A7105_Mesh_Handle_SetRegister(struct A7105_Mesh* node);
+void _A7105_Mesh_Handle_SetRegisterAck(struct A7105_Mesh* node);
+
 
 //////////////////////// Utility Functions ///////////////////////
 /*
@@ -504,11 +596,6 @@ byte _A7105_Mesh_Util_Packet_To_Register(byte* packet,
                                          struct A7105_Mesh_Register* reg,
                                          byte include_value);
 
-//Returns length of register name
-//Will return either the whole name or buffer_len -1 bytes (needs to pad a trailing /0)
-byte A7105_Mesh_Util_GetRegisterNameStr(struct A7105_Mesh_Register* reg,char* buffer,int buffer_len);
-byte A7105_Mesh_Util_GetRegisterValueStr(struct A7105_Mesh_Register* reg,char* buffer,int buffer_len);
-
 //Check the register name in the packet_cache against all serviced register 
 //names and return the index of the match or -1 if not found
 int _A7105_Mesh_Filter_RegisterName(struct A7105_Mesh* node);
@@ -543,8 +630,8 @@ void _A7105_Mesh_Handling_Request(struct A7105_Mesh* node,
   we send to handling blocking vs callback behavior.
 */
 void _A7105_Mesh_Prep_Finishing_Callback(struct A7105_Mesh* node,
-                                             void (*user_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status),
-                                             void (*blocking_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status));
+                                             void (*user_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status,void*),
+                                             void (*blocking_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status,void*));
 
 /*
   _A7105_Mesh_Handle_RX:
