@@ -365,7 +365,7 @@ void set_register_finished(struct A7105_Mesh* node, A7105_Mesh_Status status,voi
   else if (status == A7105_Mesh_INVALID_REGISTER_VALUE)
   {
     putstring("remote node returned an error: (");
-    Serial.print((const char *)node->register_cache._data);
+    Serial.print((const char *)A7105_Mesh_Register_Get_Error(node));
     putstring(")\r\n");
   }
 }

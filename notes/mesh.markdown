@@ -233,6 +233,8 @@ is a maximum of 60 bytes long.
   The responder (if there is one), sends back a REGISTER_VALUE packet like this:
     * REGISTER_VALUE | HOP | NODE_ID | UNIQUE_ID | REGISTER_NAME_LEN | REGISTER_NAME | REGISTER_VALUE_LEN | REGISTER_VALUE
 
+    *NOTE: If NODE_ID = 0, the REGISTER_VALUE packet is considered to be a broadcast. Unique_ID must still be specified
+
 ## Set Register ##
 
   Setting a register is similar to getting a register value, except

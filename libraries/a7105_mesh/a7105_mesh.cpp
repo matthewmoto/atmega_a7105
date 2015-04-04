@@ -33,10 +33,10 @@ void A7105_Mesh_Register_Set_Error(struct A7105_Mesh* node, const char* error_ms
   node->register_cache._error_set = true;
 }
 
-const char* A7105_Mesh_Register_Get_Error(struct A7105_Mesh_Register* reg)
+const char* A7105_Mesh_Register_Get_Error(struct A7105_Mesh* node)
 {
-  if (reg->_error_set)
-    return (const char*)reg->_data;
+  if (node->register_cache._error_set)
+    return (const char*)node->register_cache._data;
   return NULL;
 }
 
@@ -226,6 +226,10 @@ A7105_Mesh_Status A7105_Mesh_Initialize(struct A7105_Mesh* node,
 
   //Pending Operation state
   node->pending_operation = 0;
+
+  //Register Value BroadCast Callback
+  node->register_value_broadcast_callback = NULL;
+  node->broadcast_cache = NULL;
 
   //Start listening for packets
   A7105_Easy_Listen_For_Packets(&(node->radio), A7105_MESH_PACKET_SIZE);
@@ -882,8 +886,9 @@ void _A7105_Mesh_Handle_RegisterValue(struct A7105_Mesh* node)
     A7105_Mesh_Status ret = A7105_Mesh_STATUS_OK;
 
     //bail if this wasn't the register we requested
-    if (!_A7105_Mesh_Cmp_Packet_Register_Name(node->packet_cache,
-                                              &(node->register_cache))) 
+    if (!_A7105_Mesh_Cmp_Packet_Register(node->packet_cache,
+                                              &(node->register_cache),
+                                              false)) 
       return;
 
     //Otherwise, update the register cache with the returned data
@@ -1088,6 +1093,73 @@ void _A7105_Mesh_Handle_SetRegisterAck(struct A7105_Mesh* node)
 
 }
 
+void A7105_Mesh_Broadcast_Listen(struct A7105_Mesh * node,
+                                void (*callback)(struct A7105_Mesh*,void*),
+                                 struct A7105_Mesh_Register* reg)
+{
+  //set the callback field
+  node->register_value_broadcast_callback = callback;
+  node->broadcast_cache = reg;
+}
+
+void _A7105_Mesh_Handle_RegisterValue_Broadcast(struct A7105_Mesh* node)
+{
+  //If we're on a mesh and we see a REGISTER_VALUE without a 
+  //NODE-ID (0), consider it a broadcast
+  //If we sent a GET_REGISTER, and see a REGISTER_VALUE come back
+  //for the register we queried
+ if (node->state != A7105_Mesh_JOINING &&
+     node->state != A7105_Mesh_NOT_JOINED &&
+     node->register_value_broadcast_callback != NULL &&
+     node->packet_cache[A7105_MESH_PACKET_TYPE] == A7105_MESH_PKT_REGISTER_VALUE &&
+     node->packet_cache[A7105_MESH_PACKET_NODE_ID] == 0)
+  {
+
+    //bail if this register/value combo was already processed from a broadcast
+    if (!_A7105_Mesh_Cmp_Packet_Register(node->packet_cache,
+                                         node->broadcast_cache,
+                                         true)) 
+      return;
+
+    //Otherwise, update the register cache with the returned data
+    byte converted = _A7105_Mesh_Util_Packet_To_Register(node->packet_cache,
+                                                         node->broadcast_cache,
+                                                         true); //include value
+
+    //Check if we got a valid value and update return status
+    if (!converted)
+      return;
+
+    node->register_value_broadcast_callback(node, node->client_context_obj);
+  }
+}
+
+A7105_Mesh_Status A7105_Mesh_Broadcast(struct A7105_Mesh* node, struct A7105_Mesh_Register* reg)
+{
+  //Make sure we're on a mesh (doesn't matter which state since we're broadcasting)
+ if (node->state == A7105_Mesh_JOINING ||
+     node->state == A7105_Mesh_NOT_JOINED)
+    return A7105_Mesh_NOT_ON_MESH;
+
+
+  _A7105_Mesh_Prep_Packet_Header(node, A7105_MESH_PKT_REGISTER_VALUE);
+
+  //Clear the NODE_ID field to mark this packet as a broadcast
+  node->packet_cache[A7105_MESH_PACKET_NODE_ID] = 0;
+
+  //Put the register contents in the packet
+  byte converted = _A7105_Mesh_Util_Register_To_Packet(node->packet_cache,
+                                                       reg,
+                                                       true);
+
+  if (!converted) 
+    return A7105_Mesh_INVALID_REGISTER_VALUE;
+
+  _A7105_Mesh_Send_Response(node);
+    
+  return A7105_Mesh_STATUS_OK;
+
+}
 
 //////////////////////// Utility Functions ///////////////////////
       
@@ -1412,23 +1484,39 @@ int _A7105_Mesh_Filter_RegisterName(struct A7105_Mesh* node)
 {
   for (int x = 0;x<node->num_registers;x++)
   {
-    if (_A7105_Mesh_Cmp_Packet_Register_Name(node->packet_cache,
-                                             &(node->registers[x])))
+    if (_A7105_Mesh_Cmp_Packet_Register(node->packet_cache,
+                                        &(node->registers[x]),
+                                        false))
       return x;
   }
   return -1;
 }
 
-byte _A7105_Mesh_Cmp_Packet_Register_Name(byte* packet,
-                                          struct A7105_Mesh_Register* reg)
+byte _A7105_Mesh_Cmp_Packet_Register(byte* packet,
+                                     struct A7105_Mesh_Register* reg,
+                                     byte include_value)
 {
   byte expected_len = packet[A7105_MESH_PACKET_DATA_START];
 
+  //if the names are the same
   if (reg->_name_len == expected_len &&
       memcmp(reg->_data,
              &(packet[A7105_MESH_PACKET_NAME_START]),
              (size_t)expected_len) == 0)
-    return true;
+  {
+    if (include_value)
+    {
+    //check the values if selected
+    expected_len = packet[A7105_MESH_PACKET_NAME_START + reg->_name_len];
+    if (reg->_data_len == expected_len &&
+      memcmp(reg->_data,
+             &(packet[A7105_MESH_PACKET_NAME_START + reg->_name_len]),
+             (size_t)expected_len) == 0)
+      return true;
+    }
+    else
+      return true;
+  }
   return false;
 
 }
@@ -1526,6 +1614,9 @@ void _A7105_Mesh_Handle_RX(struct A7105_Mesh* node)
 
   //Handle SET_REGISTER_ACK response
   _A7105_Mesh_Handle_SetRegisterAck(node);
+
+  //Handle REGISTER_VALUE broadcasts (no target_id)
+  _A7105_Mesh_Handle_RegisterValue_Broadcast(node);
 }
 
 uint16_t A7105_Util_Get_Pkt_Unique_Id(byte* packet)

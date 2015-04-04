@@ -1,6 +1,12 @@
-* Decide how the user should receive notifications of value broadcasts
-  (not directed from requests, but just general broadcasts) and if that
-  is something we should even support...
+* Test the broadcast and broadcast listening features.
+
+* test the auto rejoin feature by hacking the node-id of one of the radios
+  to force it to rejoin and then complete whatever it was doing. Make sure
+  this works with all the operations.
+
+* Try using SipHash to reduce your memory footprint by replacing the last-handled
+  packet and the last seen broadcast with hashes for comparison (especially if
+  these become problems in the future)
 
 * Continue the endless quest to reduce memory footprint
 
@@ -20,12 +26,4 @@
               pending operation if there is one when we do this so we don't 
               miss data.
 
-* test the auto rejoin feature by hacking the node-id of one of the radios
-  to force it to rejoin and then complete whatever it was doing. Make sure
-  this works with all the operations.
 
-* After the Mesh is working with all packet types, look for ways to reduce the size of the 
-  generated HEX file, things are starting to get big...
-  * Idea: Most of the _A7105_Mesh_Update_OPNAME functions are really just
-          timouts that set the state back to IDLE. we could make this 
-          a generic function like our _blocking_op_finished.

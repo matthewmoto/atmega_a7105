@@ -151,7 +151,7 @@ void A7105_Mesh_Register_Initialize(struct A7105_Mesh_Register* reg,
 
 void A7105_Mesh_Register_Set_Error(struct A7105_Mesh* node, const char* error_msg);
 
-const char* A7105_Mesh_Register_Get_Error(struct A7105_Mesh_Register* reg);
+const char* A7105_Mesh_Register_Get_Error(struct A7105_Mesh* node);
 
 void _A7105_Mesh_Register_Clear_Error(struct A7105_Mesh_Register* reg);
 
@@ -222,6 +222,12 @@ struct A7105_Mesh
   uint16_t responder_unique_id; 
   void (*operation_callback)(struct A7105_Mesh*,A7105_Mesh_Status,void*);
   A7105_Mesh_Status blocking_operation_status; //Used to store the return status during blocking interface usage
+
+  ///// Register Value Broadcast Handler ///////
+  void (*register_value_broadcast_callback)(struct A7105_Mesh*,void*);
+  A7105_Mesh_Register* broadcast_cache; //HACK: maintained by client so we don't have to waste 150bytes of ram 
+                                        //      if broadcasting isn't used
+  
 
   ///// Auto Rejoin State Cache //////
   void (*pending_operation_callback)(struct A7105_Mesh*,A7105_Mesh_Status,void*);
@@ -497,6 +503,54 @@ A7105_Mesh_Status A7105_Mesh_SetRegister(struct A7105_Mesh* node,
 void _A7105_Mesh_Handle_SetRegister(struct A7105_Mesh* node);
 void _A7105_Mesh_Handle_SetRegisterAck(struct A7105_Mesh* node);
 
+/*
+  A7105_Mesh_Broadcast_Listen:
+    * node: A node that has been previously initialized with A7105_Mesh_Initialize()
+    * callback: The function to call whenever this node receives a Register Value broadcast.
+    * reg: The register to use as a cache for broadcast packets
+
+  Side-Effects/Notes:
+    * The value being broadcast is stored in node->register_cache when 'callback' is called
+    * The node *may* be involved in other operations when 'callback' is called so 
+      it's best to not depend on sending requests from 'callback'
+    * Important! The callback specified may be called multiple times
+      if repeated packets come in with the same value. 
+    * 'reg' must remain in scope as long as the node is listening.
+
+    * To stop listening, just call with NULL,NULL for callback,reg
+
+
+  This function registers a callback to call when a REGISTER_VALUE packet with a target of 0
+  is seen on the mesh (that is a broadcast value). 
+    
+*/
+void A7105_Mesh_Broadcast_Listen(struct A7105_Mesh* node,
+                                void (*callback)(struct A7105_Mesh*,void*),
+                                struct A7105_Mesh_Register* reg);
+
+void _A7105_Mesh_Handle_RegisterValue_Broadcast(struct A7105_Mesh* node);
+
+/*
+  A7105_Mesh_Broadcast:
+    * node: A node that has been previously initialized with A7105_Mesh_Initialize()
+    * reg: A pointer to a register structure that has been initialized and contains a 
+           name and value
+
+    Side-Effects/Notes: Broadcasting a register value is not a guarantee
+                        that it will be sent or received correctly. If we
+                        are currently not on a mesh (if we got kicked and have
+                        to rejoin), the packet won't be sent. Also, since this
+                        packet doesn't receive any ACK, we might just be sending
+                        it to the ether. *Don't* use this for anything that 
+                        is important.
+
+    Returns:  
+      * A7105_Mesh_NOT_ON_MESH: if node is not connected to a mesh
+      * A7105_Mesh_STATUS_OK: if the broadcast register was sent
+      * A7105_Mesh_INVALID_REGISTER_VALUE: If 'reg' wasn't a legitimate register or was 
+                                           too long to fit in a packet.
+*/
+A7105_Mesh_Status A7105_Mesh_Broadcast(struct A7105_Mesh* node, struct A7105_Mesh_Register* reg);
 
 //////////////////////// Utility Functions ///////////////////////
 /*
@@ -616,8 +670,9 @@ int _A7105_Mesh_Filter_RegisterName(struct A7105_Mesh* node);
 
 //Returns true if the name is the same for reg and the name field in the packet
 //false otherwise
-byte _A7105_Mesh_Cmp_Packet_Register_Name(byte* packet,
-                                          struct A7105_Mesh_Register* reg); 
+byte _A7105_Mesh_Cmp_Packet_Register(byte* packet,
+                                     struct A7105_Mesh_Register* reg,
+                                     byte include_value); 
 
 /*
   _A7105_Mesh_Handling_Request:
