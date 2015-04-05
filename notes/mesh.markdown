@@ -93,6 +93,33 @@ in the packets themselves). All packets will be repeated, except:
     we're the only ones that are servicing the request, so we don't need to share it further.
   * Packets we previously repeated (identical packets except with a different hop count.
 
+See details of hop count below in the Packet Characteristics description
+
+### Ignoring Duplicate Packets ###
+
+With packet repeating functionality comes the necessity of differentating packets a
+node has handled from the delayed repeats of the same packet (so we don't handle the same
+packet multiple times).
+
+The solution implemented here is a sequence number included in the second byte of each packet.
+This number (0-15) is sent with every request from a node and incremented for every subsequent
+request.
+
+Thusly, receiving nodes can differentiate between repeated packets for requests they've already
+seen and the original request itself. Additionally, receiving nodes can also differentate between
+two identical (but distinct) requests sent from the same node. 
+
+The reference implementation of this mesh has Nodes keeping a "handled packet cache" where the 
+packet type, sequence number and sending node Unique-ID are kept in a rotating buffer to filter
+packets that have already been acted upon.
+
+The size of this cache is small (4 bytes for every packet) so it can be increased (and should be)
+for larger meshes. A good rule of thumb is to make this cache size identical to the number of expected
+nodes on the mesh -1 to handle the worst case where every node except one sends a packet at nearly 
+the same time to the lone receiver. That node will then need to distinguish between the packets 
+it has handled and the repeats it doesn't want).
+
+
 #### Exception: The JOIN packet ####
   The one exception to the exclusion rules above are that JOIN packets are *always* repeated. 
 The reasoning behind this is to maximize visibility of joining nodes to ensure we minimize node-ID
@@ -113,10 +140,33 @@ can be on the mesh at any time (255) and keep the packet requirements short.
 
 All packets should have the following characteristic
 
-OPERATION | HOP-COUNT | NODE_ID | UNIQUE_ID | <operation-specific-data>
+OPERATION | SEQ-NUM/HOP-COUNT | NODE_ID | UNIQUE_ID | <operation-specific-data>
 
 Packets are 64 bytes long at a maximum, operation specific data
 is a maximum of 60 bytes long.
+
+The packet header looks like this:
+  1. Byte 0: The operation (PING, JOIN, etc)
+  2. Byte 1: The sequence number and hop count (upper nibble is sequence, lower is hop)
+             See notes below on these fields.
+  3. Byte 2: The node-ID of the sender (1-255, 0 is reserved)  
+  4. Byte 3-4: The unique-ID of the sender (1-16535, 0 is reserved)
+
+### Hop Count ###
+The hop count in the SEQ-NUM/HOP-COUNT byte is a number 0-15(max) denoting
+how many times a packet has been repeated by somebody other than the sender.
+
+When a node sends a packet normally, the hop count should be 0. Every node that
+repeats the packet should do so verbatim except incrementing the hop count nibble 
+by one so the next node will know whether or not the packet can be repeated again.
+
+### Sequence Number ###
+The sequence number nibble in the SEQ-NUM/HOP-COUNT byte is a number (0-15) that
+is maintained by each node when sending requests (or value broadcasts). This number 
+is incremented (15 + 1 rolls over to 0) after each sent packet. Thusly, two identical
+requests sent back-to-back from a node can be distinguished from the same packet being
+repeated by other nodes in the mesh (since we don't know the route a packet will take,
+hop count cannot be used for this reliably).
 
 ## Maintaining Node Numbering ##
 
@@ -126,7 +176,7 @@ is a maximum of 60 bytes long.
   they send.  This deals with the problem of joining the mesh as a certain
   node number that's already in use (the node using it will respond with a 
   CONFLICT_NAME packet) like this:
-    * CONFLICT_NAME | HOP | NODE_ID | UNIQUE_ID
+    * CONFLICT_NAME | HOP/SEQ | NODE_ID | UNIQUE_ID
 
   Also, this deals with the issue of nodes that appear thinking they're
   already part of the mesh (if they were blocked or something while somebody
@@ -166,14 +216,14 @@ is a maximum of 60 bytes long.
   If found, a CONFLICT_REGISTER packet must be sent and the receiving
   node must remove itself from the mesh. The packet looks like this:
   
-  CONFLICT_REGISTER | HOP | NODE_ID | UNIQUE_ID | TARGET_NODE | TARGET_INQUE_ID | REGISTER_NAME_LEN |REGISTER_NAME
+  CONFLICT_REGISTER | HOP/SEQ | NODE_ID | UNIQUE_ID | TARGET_NODE | TARGET_INQUE_ID | REGISTER_NAME_LEN |REGISTER_NAME
  
 ## Joining ##
   To join, a node must broadcast a "JOIN" packet at a sub-second frequency
   for multiple seconds before it can declare itself "JOINED." 
   
   The JOIN packet looks like this:
-    *JOIN | HOP | NODE_ID | UNIQUE_ID | 
+    *JOIN | HOP/SEQ | NODE_ID | UNIQUE_ID | 
 
   During the time it broadcasts, it must honor "CONFLICT" packets from other
   nodes. These should only come from nodes with the same NODE_ID being 
@@ -188,10 +238,10 @@ is a maximum of 60 bytes long.
   the Presense Table is considered accurate for the next operation.
 
   The PING packet looks like this:
-    * PING | HOP | NODE_ID | UNIQUE_ID
+    * PING | HOP/SEQ | NODE_ID | UNIQUE_ID
 
   All nodes on the network respond (after a node-id delay) with:
-    * PONG | HOP | NODE_ID | UNIQUE_ID 
+    * PONG | HOP/SEQ | NODE_ID | UNIQUE_ID 
 
 ## Get Register Names (directed, retry) ##
 
@@ -206,16 +256,16 @@ is a maximum of 60 bytes long.
 
 
   The GET_NUM_REGISTERS packet looks like this:
-    * GET_NUM_REGISTERS | HOP | NODE_ID | UNIQUE_ID | TARGET_NODE_NUM
+    * GET_NUM_REGISTERS | HOP/SEQ | NODE_ID | UNIQUE_ID | TARGET_NODE_NUM
   
   The NUM_REGISTERS packet response looks like this:
-    * NUM_REGISTERS | HOP | NODE_ID | UNIQUE_ID | NUM_REGISTERS
+    * NUM_REGISTERS | HOP/SEQ | NODE_ID | UNIQUE_ID | NUM_REGISTERS
 
   the GET_REGISTER_NAME packet looks like this:
-    * GET_REGISTER_NAME | HOP | NODE_ID | UNIQUE_ID | TARGET_NODE_NUM | REGISTER_INDEX
+    * GET_REGISTER_NAME | HOP/SEQ | NODE_ID | UNIQUE_ID | TARGET_NODE_NUM | REGISTER_INDEX
 
   The response REGISTER_NAME packet looks like this:
-    * REGISTER_NAME | HOP | NODE_ID | UNIQUE_ID | REGISTER_NAME_LEN |REGISTER_NAME
+    * REGISTER_NAME | HOP/SEQ | NODE_ID | UNIQUE_ID | REGISTER_NAME_LEN |REGISTER_NAME
 
   Note: If the register index is invalid, the response should just 
         have a REGISTER_NAME_LEN of 0
@@ -228,10 +278,10 @@ is a maximum of 60 bytes long.
   with a directed packet to the original requstor.
 
   The GET_REGISTER packet looks like this:
-    * GET_REGISTER | HOP | NODE_ID | UNIQUE_ID | REGISTER_NAME_LEN | REGISTER_NAME
+    * GET_REGISTER | HOP/SEQ | NODE_ID | UNIQUE_ID | REGISTER_NAME_LEN | REGISTER_NAME
    
   The responder (if there is one), sends back a REGISTER_VALUE packet like this:
-    * REGISTER_VALUE | HOP | NODE_ID | UNIQUE_ID | REGISTER_NAME_LEN | REGISTER_NAME | REGISTER_VALUE_LEN | REGISTER_VALUE
+    * REGISTER_VALUE | HOP/SEQ | NODE_ID | UNIQUE_ID | REGISTER_NAME_LEN | REGISTER_NAME | REGISTER_VALUE_LEN | REGISTER_VALUE
 
     *NOTE: If NODE_ID = 0, the REGISTER_VALUE packet is considered to be a broadcast. Unique_ID must still be specified
 
@@ -241,10 +291,10 @@ is a maximum of 60 bytes long.
   it's all in one packet so there are limits on the size of the register name/value.
   
   The SET_REGISTER packet looks like this:
-    * SET_REGISTER | HOP | NODE_ID | UNIQUE_ID |REGISTER_NAME_LEN | REGISTER_NAME | REGISTER_VALUE_LEN |REGISTER_VALUE
+    * SET_REGISTER | HOP/SEQ | NODE_ID | UNIQUE_ID |REGISTER_NAME_LEN | REGISTER_NAME | REGISTER_VALUE_LEN |REGISTER_VALUE
 
   If there is a node servicing that register (and the register can be set), it responds like this:
-    * SET_REGISTER_ACK | HOP | NODE_ID | UNIQUE_ID | TARGET_NODE_NUM | ERR_MSG_DATA | NULL_BYTE
+    * SET_REGISTER_ACK | HOP/SEQ | NODE_ID | UNIQUE_ID | TARGET_NODE_NUM | ERR_MSG_DATA | NULL_BYTE
 
     *NOTE: If there is an error setting a register and the managing node
            wants it known (always a good idea), they should include an ascii 

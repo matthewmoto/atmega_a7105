@@ -1,3 +1,44 @@
+* Add sequence ID to HOP byte in the packet header so we can use it to debounce requests and broadcasts
+  without caching full packets.
+  - Add GetHopCount(), SetHopCount() functions to make the bitmasks less painful
+  - Add the same for SequenceNumber()
+  - Add a tracking byte for the requestor's sequence ID
+    ~ NOTE: Rotate this in the header prep function?
+  - replace the handled request packet cache with a buffer of len N containing
+    ~ Unique ID
+    ~ Packet Type
+    ~ sequence number 
+  - replace (check first) the is_same_packet_sans_hop function
+  - update packet_handled function
+  - Make sure we're filtering value broadcasts as requests and sending them as requests...
+
+    NOTE: 64byte packet cache == 16 x 4 byte sequence cache. We probably only need 8...
+
+    - Also, should we cache the last op for sequence number reset?
+      * NO: Every request packet sent get's a new sequence
+            This means that for a filtering failure, we'd need 16 *requests* to
+            be sent (4 bit sequence ID) *AND* the repeating request to be the
+            same time as the one 16 requests ago for it to be a failure.
+      
+            What is a failure? If a packet is ignored accidentally or
+            handled twice. Handling twice would require filling the handled_packet
+            cache with 8 unique packets. The best way to do this is having a busy 
+            mesh. So if 100 nodes all shoot data around, I guess this is possible....
+
+            With something like 32 nodes, it's pretty unlikely unless everybody is
+            broadcasting values. I guess a good rule of thumb is to have a 
+            handled cache length at least as long as the number of expected nodes   
+            on the mesh.
+
+            If a packet is accidentally ignored, I think it's a lot less terrible
+            than otherwise since we can just retry with a new sequence ID to 
+            get a response.
+
+    
+    
+
+* update docs about the sequence ID approach
+
 * Test the broadcast and broadcast listening features.
 
 * test the auto rejoin feature by hacking the node-id of one of the radios

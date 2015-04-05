@@ -5,6 +5,7 @@
 #include "a7105_mesh_packet.h"
 
 //Packet size (64 bytes is the Maximum supported in normal FIFO mode by the A7105)
+//NOTE: This must be a multiple of 8 and at least 16 bytes (so 16, 32 or 64)
 #define A7105_MESH_PACKET_SIZE 64
 
 //Total available length for register name + value in a packet 
@@ -15,8 +16,12 @@
 //(kept small to prevent using too much RAM)
 #define A7105_MESH_MAX_REPEAT_CACHE_SIZE 2
 
+//Maximum number of packet header/sequence/unique sets 
+//to keep for avoiding reacting to previously seen (and reacted-to) packets
+#define A7105_MESH_HANDLED_PACKET_CACHE_LENGTH 8 
+
 //Maximum number of times a packet can be repeated on the mesh
-#define A7105_MESH_MAX_HOP_COUNT 16
+#define A7105_MESH_MAX_HOP_COUNT 10
 
 /////////Join process constants (milliseconds)///////////
 
@@ -44,8 +49,11 @@
 #define A7105_MESH_REQUEST_TIMEOUT 3000 
 
 //Debug stuff
-#define putstring(x) SerialPrint_P(PSTR(x))
-void SerialPrint_P(PGM_P str);
+#define A7105_MESH_DEBUG
+
+#ifdef A7105_MESH_DEBUG
+#define A7105_Mesh_SerialDump(x) SerialDump_P(PSTR(x))
+#endif
 
 //Error messages to include with SET_REGISTER packets
 //when the callback doesn't work correctly
@@ -59,7 +67,7 @@ const char ERR_STR1[] PROGMEM = "Unknown Error (not set)";
 const char ERR_STR2[] PROGMEM = "Remote Callback Error";
 const char ERR_STR3[] PROGMEM = "Invalid Value Size";
 
-const char* const A7105_ERROR_STRINGS[] PROGMEM = {ERR_STR1, ERR_STR2};
+const char* const A7105_ERROR_STRINGS[] PROGMEM = {ERR_STR1, ERR_STR2, ERR_STR3};
 
 
 enum A7105_Mesh_State{
@@ -197,8 +205,11 @@ struct A7105_Mesh
   uint16_t target_unique_id;
 
   //////// Response Tracking /////////
-  byte last_request_handled[A7105_MESH_PACKET_SIZE];
-  unsigned long last_request_handled_time;
+  //byte last_request_handled[A7105_MESH_PACKET_SIZE];
+  //unsigned long last_request_handled_time;
+  byte handled_packet_cache[A7105_MESH_HANDLED_PACKET_CACHE_LENGTH][A7105_MESH_HANDLED_PACKET_HEADER_SIZE];
+  byte last_handled_packet_index;
+  byte sequence_num; //Send by requestors to identify their packets
 
   //////// Join State Tracking ////////
   unsigned long join_first_tx_time;
@@ -298,7 +309,6 @@ A7105_Mesh_Status A7105_Mesh_Join(struct A7105_Mesh* node,
 A7105_Mesh_Status A7105_Mesh_Join(struct A7105_Mesh* node, 
                                   byte node_id,
                                   void (*join_finished_callback)(struct A7105_Mesh*,A7105_Mesh_Status,void*));
-
 
 A7105_Mesh_Status A7105_Mesh_Join(struct A7105_Mesh* node, 
                                   byte node_id,
@@ -630,6 +640,8 @@ void _A7105_Mesh_Prep_Packet_Header(struct A7105_Mesh* node,
         operation).
       * The function blocks until the data is done writing at the radio
         and sends the STROBE command to listen again.
+      * The sequence number for the node is incremented for the call
+        to aid receivers in filtering seen packets
 */
 void _A7105_Mesh_Send_Response(struct A7105_Mesh* node);
 
@@ -648,6 +660,9 @@ void _A7105_Mesh_Send_Response(struct A7105_Mesh* node);
         please review the docs for that function above.
 */
 void _A7105_Mesh_Send_Request(struct A7105_Mesh* node);
+
+//Same as request, but doesn't update the sent-time
+void _A7105_Mesh_Send_Broadcast(struct A7105_Mesh* node);
 
 //Returns true if the register name from 'reg' is in packet
 //for GET/SET Register requests only
@@ -762,4 +777,14 @@ byte _A7105_Mesh_Filter_Packet(struct A7105_Mesh* node,
 void A7105_Mesh_Set_Node_Registers(struct A7105_Mesh* node,
                               struct A7105_Mesh_Register* regs,
                               byte num_regs);
+
+byte _A7105_Mesh_Get_Packet_Seq(byte* packet);
+
+void _A7105_Mesh_Set_Packet_Seq(byte* packet, byte sequence);
+
+byte _A7105_Mesh_Get_Packet_Hop(byte* packet);
+
+void _A7105_Mesh_Set_Packet_Hop(byte* packet, byte hop);
+
+
 #endif

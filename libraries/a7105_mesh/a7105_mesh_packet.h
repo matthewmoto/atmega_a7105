@@ -16,7 +16,7 @@
 #define A7105_MESH_PKT_SET_REGISTER_ACK    0x0D
 
 #define A7105_MESH_PACKET_TYPE       0
-#define A7105_MESH_PACKET_HOP        1
+#define A7105_MESH_PACKET_HOP_SEQ    1
 #define A7105_MESH_PACKET_NODE_ID    2
 #define A7105_MESH_PACKET_UNIQUE_ID  3 //16 bit
 #define A7105_MESH_PACKET_TARGET_ID  5 //Not present in all packets
@@ -24,5 +24,18 @@
 #define A7105_MESH_PACKET_REG_INDEX  6 //byte that has register index for GET_REGISTER_NAME requests
 #define A7105_MESH_PACKET_NAME_START  6 //start index of the name data for GET_REGISTER/SET_REGISTER/REGISTER_NAME packets
 #define A7105_MESH_PACKET_ERR_MSG_START  6 //start index of the error message for SET_REGISTER_ACK packets
+
+//The different nibbles in the HOP/SEQ byte of the packet
+//header for the HOP count and Sequence number (used for
+//packet repeat filtering)
+#define A7105_MESH_PACKET_HOP_MASK 0x0F
+#define A7105_MESH_PACKET_SEQ_MASK 0xF0
+
+//Bytes stored for each entry in the handled packet cache
+#define A7105_MESH_HANDLED_PACKET_HEADER_SIZE 4 
+#define A7105_MESH_HANDLED_PACKET_OP 0
+#define A7105_MESH_HANDLED_PACKET_SEQ 1
+#define A7105_MESH_HANDLED_PACKET_UNIQUE_ID 2
+
 
 #endif

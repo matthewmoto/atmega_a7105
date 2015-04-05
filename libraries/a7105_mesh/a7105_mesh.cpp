@@ -3,13 +3,21 @@
 #include "a7105_mesh.h"
 
 
+
+#ifdef A7105_MESH_DEBUG
+void SerialDump_P(PGM_P str){
+  for (uint8_t c; (c = pgm_read_byte(str)); str++) Serial.write(c);     
+} 
+
 void DebugHeader(struct A7105_Mesh* node)
 {
   Serial.print(millis());
-  putstring(" : (");
+  A7105_Mesh_SerialDump(" : (");
   Serial.print(node->unique_id,HEX);
-  putstring(") ");
+  A7105_Mesh_SerialDump(") ");
 }
+#endif
+
 //////////////// A7105_Register Functions ////////////////////
 
 void A7105_Mesh_Register_Initialize(struct A7105_Mesh_Register* reg,
@@ -198,8 +206,12 @@ A7105_Mesh_Status A7105_Mesh_Initialize(struct A7105_Mesh* node,
   node->target_unique_id = 0; // (ditto)
 
   //response tracking variables
-  memset(node->last_request_handled,0,A7105_MESH_PACKET_SIZE);
-  node->last_request_handled_time = 0;
+  //memset(node->last_request_handled,0,A7105_MESH_PACKET_SIZE);
+  //node->last_request_handled_time = 0;
+  node->sequence_num = 0;
+  node->last_handled_packet_index = 0;
+  for (int x = 0; x < A7105_MESH_HANDLED_PACKET_CACHE_LENGTH;x++)
+    memset(node->handled_packet_cache[x],0,A7105_MESH_HANDLED_PACKET_HEADER_SIZE);
 
   //Join tracking
   node->join_retransmit_delay = (uint16_t)random(A7105_MESH_MIN_JOIN_RETRANSMIT_DELAY,
@@ -321,9 +333,13 @@ A7105_Mesh_Status A7105_Mesh_Join(struct A7105_Mesh* node,
   node->state = A7105_Mesh_JOINING;
   node->node_id = node_id;
   node->join_first_tx_time = millis();
+  
+  //DEBUG
+  #ifdef A7105_MESH_DEBUG
   DebugHeader(node);
-  putstring("Attempting to join as ");
+  A7105_Mesh_SerialDump("Attempting to join as ");
   Serial.println(node->node_id);
+  #endif
 
   //Set up the finishing callback
   if (interrupting)
@@ -436,10 +452,12 @@ void _A7105_Mesh_Handle_Deferred_Joining(struct A7105_Mesh* node)
       A7105_Util_Get_Pkt_Unique_Id(node->packet_cache) > node->unique_id)
   {
     //DEBUG
+    #ifdef A7105_MESH_DEBUG
     DebugHeader(node);
-    putstring("deferring JOIN to ");
+    A7105_Mesh_SerialDump("deferring JOIN to ");
     Serial.print(A7105_Util_Get_Pkt_Unique_Id(node->packet_cache),HEX);
-    putstring(" since they have a higher unique, rejoining...\r\n");
+    A7105_Mesh_SerialDump(" since they have a higher unique, rejoining...\r\n");
+    #endif
     
   
     //If we see a conflict and we're the lower Unique ID, rejoin with a +1 node id
@@ -458,10 +476,12 @@ byte _A7105_Mesh_Check_For_Node_ID_Conflicts(struct A7105_Mesh* node)
       A7105_Util_Get_Pkt_Unique_Id(node->packet_cache) != node->unique_id)
   {
    //DEBUG
+    #ifdef A7105_MESH_DEBUG
     DebugHeader(node);
-    putstring("Found different node pushing packets as us ->");
+    A7105_Mesh_SerialDump("Found different node pushing packets as us ->");
     Serial.print(A7105_Util_Get_Pkt_Unique_Id(node->packet_cache),HEX);
-    putstring(" sending name conflict\r\n");
+    A7105_Mesh_SerialDump(" sending name conflict\r\n");
+    #endif
   
     _A7105_Mesh_Prep_Packet_Header(node, A7105_MESH_PKT_CONFLICT_NAME);
     _A7105_Mesh_Send_Request(node);
@@ -589,7 +609,8 @@ void _A7105_Mesh_Update_Ping(struct A7105_Mesh* node)
   if (node->state == A7105_Mesh_PING &&
       millis() - node->request_sent_time > A7105_MESH_PING_TIMEOUT)
   {
-    //NUKEME
+    #ifdef A7105_MESH_DEBUG
+    //DEBUG
     int num_nodes = 0;
     for (int x = 1;x<256;x++)
     {
@@ -598,9 +619,10 @@ void _A7105_Mesh_Update_Ping(struct A7105_Mesh* node)
     }
 
     DebugHeader(node);
-    putstring("Finished ping, found ");
+    A7105_Mesh_SerialDump("Finished ping, found ");
     Serial.print(num_nodes);
-    putstring(" other nodes\r\n");
+    A7105_Mesh_SerialDump(" other nodes\r\n");
+    #endif
 
     node->state = A7105_Mesh_IDLE;
     node->operation_callback(node, A7105_Mesh_STATUS_OK,node->client_context_obj);
@@ -1111,8 +1133,8 @@ void _A7105_Mesh_Handle_RegisterValue_Broadcast(struct A7105_Mesh* node)
  if (node->state != A7105_Mesh_JOINING &&
      node->state != A7105_Mesh_NOT_JOINED &&
      node->register_value_broadcast_callback != NULL &&
-     node->packet_cache[A7105_MESH_PACKET_TYPE] == A7105_MESH_PKT_REGISTER_VALUE &&
-     node->packet_cache[A7105_MESH_PACKET_NODE_ID] == 0)
+     node->packet_cache[A7105_MESH_PACKET_NODE_ID] == 0 &&
+     _A7105_Mesh_Filter_Packet(node,A7105_MESH_PKT_REGISTER_VALUE,true))
   {
 
     //bail if this register/value combo was already processed from a broadcast
@@ -1131,6 +1153,9 @@ void _A7105_Mesh_Handle_RegisterValue_Broadcast(struct A7105_Mesh* node)
       return;
 
     node->register_value_broadcast_callback(node, node->client_context_obj);
+
+    //Mark the packet as handled so we don't process the same broadcast again
+    _A7105_Mesh_Handling_Request(node,node->packet_cache); 
   }
 }
 
@@ -1155,7 +1180,7 @@ A7105_Mesh_Status A7105_Mesh_Broadcast(struct A7105_Mesh* node, struct A7105_Mes
   if (!converted) 
     return A7105_Mesh_INVALID_REGISTER_VALUE;
 
-  _A7105_Mesh_Send_Response(node);
+  _A7105_Mesh_Send_Broadcast(node);
     
   return A7105_Mesh_STATUS_OK;
 
@@ -1229,20 +1254,22 @@ void _A7105_Mesh_Update_Repeats(struct A7105_Mesh* node)
     //Pop the packet
     byte* packet = _A7105_Mesh_Pop_Repeat(node);
     //Increase the hop count
-    packet[A7105_MESH_PACKET_HOP]++; 
+    _A7105_Mesh_Set_Packet_Hop(packet,_A7105_Mesh_Get_Packet_Hop(packet) + 1);
     //Push the packet to the network (don't use the SendRequest sinc
     //we don't want to cache this anywhere else)
     A7105_WriteData(&(node->radio), packet, A7105_MESH_PACKET_SIZE);
 
     //DEBUG (print packet to serial)
+    #ifdef A7105_MESH_DEBUG
     DebugHeader(node);
-    putstring("REPEAT:[");
+    A7105_Mesh_SerialDump("REPEAT:[");
     for (int x = 0; x<6;x++)
     {
       Serial.print(packet[x],HEX);
-      putstring("] [");
+      A7105_Mesh_SerialDump("] [");
     }
-    putstring("...\r\n");
+    A7105_Mesh_SerialDump("...\r\n");
+    #endif
 
     //Wait for the transmission to finish,then start the radio
     //listening again
@@ -1318,7 +1345,7 @@ void _A7105_Mesh_Cache_Packet_For_Repeat(struct A7105_Mesh* node)
       return;
 
   //Don't repeat of the packet has been repeated too many times
-  if (node->packet_cache[A7105_MESH_PACKET_HOP] >= A7105_MESH_MAX_HOP_COUNT)
+  if (_A7105_Mesh_Get_Packet_Hop(node->packet_cache) >= A7105_MESH_MAX_HOP_COUNT)
     return;
 
   //If we make it here, the packet is suitable to be repeated
@@ -1327,11 +1354,15 @@ void _A7105_Mesh_Cache_Packet_For_Repeat(struct A7105_Mesh* node)
 
 byte _A7105_Mesh_Util_Is_Same_Packet_Sans_Hop(byte* a, byte* b)
 {
-  byte ret = true;
+
+  //Filter sequence here so we can ignore the whole hop/seq byte in the loop below
+  if (_A7105_Mesh_Get_Packet_Seq(a) != _A7105_Mesh_Get_Packet_Seq(b))  
+      return false; 
+
   for (int x = 0;x<A7105_MESH_PACKET_SIZE;x++)
-    if (a[x] != b[x] && x != A7105_MESH_PACKET_HOP)
-      ret = false;
-  return ret;
+    if (a[x] != b[x] && x != A7105_MESH_PACKET_HOP_SEQ)
+      return false;
+  return true;
 }
 
 void _A7105_Mesh_Prep_Packet_Header(struct A7105_Mesh* node,
@@ -1342,7 +1373,8 @@ void _A7105_Mesh_Prep_Packet_Header(struct A7105_Mesh* node,
 
 
   node->packet_cache[A7105_MESH_PACKET_TYPE] = packet_type;
-  node->packet_cache[A7105_MESH_PACKET_HOP] = 0;
+  _A7105_Mesh_Set_Packet_Hop(node->packet_cache,0);
+  _A7105_Mesh_Set_Packet_Seq(node->packet_cache,node->sequence_num);
   node->packet_cache[A7105_MESH_PACKET_NODE_ID] = node->node_id;
   node->packet_cache[A7105_MESH_PACKET_UNIQUE_ID] = (node->unique_id)>>8;
   node->packet_cache[A7105_MESH_PACKET_UNIQUE_ID+1] = (node->unique_id) & 0xFF;
@@ -1363,14 +1395,16 @@ void _A7105_Mesh_Send_Response(struct A7105_Mesh* node)
   A7105_WriteData(&(node->radio), node->packet_cache, A7105_MESH_PACKET_SIZE);
 
   //DEBUG (print packet to serial)
+  #ifdef A7105_MESH_DEBUG
   DebugHeader(node);
-  putstring("TX:[");
+  A7105_Mesh_SerialDump("TX:[");
   for (int x = 0; x<6;x++)
   {
     Serial.print(node->packet_cache[x],HEX);
-    putstring("] [");
+    A7105_Mesh_SerialDump("] [");
   }
-  putstring("...\r\n");
+  A7105_Mesh_SerialDump("...\r\n");
+  #endif
 
   //Wait for the transmission to finish,then start the radio
   //listening again
@@ -1389,10 +1423,19 @@ void _A7105_Mesh_Send_Request(struct A7105_Mesh* node)
 {
   //Update the request sending time
   node->request_sent_time = millis();
+
+  //Bump the sequence number
+  node->sequence_num = (node->sequence_num + 1) % 16;
   _A7105_Mesh_Send_Response(node);
 
 }
                             
+void _A7105_Mesh_Send_Broadcast(struct A7105_Mesh* node)
+{
+  //Bump the sequence number
+  node->sequence_num = (node->sequence_num + 1) % 16;
+  _A7105_Mesh_Send_Response(node);
+}
 
 byte _A7105_Mesh_Util_Does_Packet_Have_Register(byte* packet,
                                                 struct A7105_Mesh_Register* reg)
@@ -1524,8 +1567,15 @@ byte _A7105_Mesh_Cmp_Packet_Register(byte* packet,
 void _A7105_Mesh_Handling_Request(struct A7105_Mesh* node,
                                   byte* packet)
 {
-  memcpy(node->last_request_handled,packet,A7105_MESH_PACKET_SIZE);
-  node->last_request_handled_time = millis();
+  //Save the header info for our handled packet index
+  node->handled_packet_cache[node->last_handled_packet_index][A7105_MESH_HANDLED_PACKET_OP] = node->packet_cache[A7105_MESH_PACKET_TYPE];
+  node->handled_packet_cache[node->last_handled_packet_index][A7105_MESH_HANDLED_PACKET_SEQ] = _A7105_Mesh_Get_Packet_Seq(node->packet_cache);
+  node->handled_packet_cache[node->last_handled_packet_index][A7105_MESH_HANDLED_PACKET_UNIQUE_ID] = node->packet_cache[A7105_MESH_PACKET_UNIQUE_ID]; 
+  node->handled_packet_cache[node->last_handled_packet_index][A7105_MESH_HANDLED_PACKET_UNIQUE_ID+1] = node->packet_cache[A7105_MESH_PACKET_UNIQUE_ID+1]; 
+  
+  //increment the index to store the next request
+  node->last_handled_packet_index = (node->last_handled_packet_index + 1) % A7105_MESH_HANDLED_PACKET_CACHE_LENGTH;
+
 }
 
 void _A7105_Mesh_Prep_Finishing_Callback(struct A7105_Mesh* node,
@@ -1561,14 +1611,17 @@ void _A7105_Mesh_Handle_RX(struct A7105_Mesh* node)
   A7105_Easy_Listen_For_Packets(&(node->radio), A7105_MESH_PACKET_SIZE);
   
 
+  #ifdef A7105_MESH_DEBUG
+  //DEBUG
   DebugHeader(node);
-  putstring("RX:[");
+  A7105_Mesh_SerialDump("RX:[");
   for (int x = 0; x<6;x++)
   {
     Serial.print(node->packet_cache[x],HEX);
-    putstring("] [");
+    A7105_Mesh_SerialDump("] [");
   }
-  putstring("...\r\n");
+  A7105_Mesh_SerialDump("...\r\n");
+  #endif
 
   //Check for packets bogusly pushed by duplicate node-id's
   if (_A7105_Mesh_Check_For_Node_ID_Conflicts(node))
@@ -1636,17 +1689,26 @@ byte _A7105_Mesh_Filter_Packet(struct A7105_Mesh* node,
   if (node->packet_cache[A7105_MESH_PACKET_TYPE] != packet_type)
     return false;
 
-  //Filter requests using the debounce timer
+  //Filter requests using the handled packet cache
   if (treat_as_request)
   {
-    //If we are outside our request handling debounce window, just 
-    //let the request through
-    if (millis() - node->last_request_handled_time > A7105_MESH_REQUEST_HANDLING_DEBOUNCE)
-      return true; 
 
-    //Otherwise, make sure it's different than the last request handled
-    return !_A7105_Mesh_Util_Is_Same_Packet_Sans_Hop(node->packet_cache,
-                                                     node->last_request_handled);
+    //If we've seen this packet type from this unique_id with this
+    //sequence number, ignore it
+    for (int x = 0;x<A7105_MESH_HANDLED_PACKET_CACHE_LENGTH;x++)
+    {
+    
+      if (node->packet_cache[A7105_MESH_PACKET_TYPE] == node->handled_packet_cache[x][A7105_MESH_HANDLED_PACKET_OP] &&
+          _A7105_Mesh_Get_Packet_Seq(node->packet_cache) == node->handled_packet_cache[x][A7105_MESH_HANDLED_PACKET_SEQ] &&
+           node->handled_packet_cache[x][A7105_MESH_HANDLED_PACKET_UNIQUE_ID] == node->packet_cache[A7105_MESH_PACKET_UNIQUE_ID] && 
+  node->handled_packet_cache[x][A7105_MESH_HANDLED_PACKET_UNIQUE_ID+1] == node->packet_cache[A7105_MESH_PACKET_UNIQUE_ID+1])
+        return false;
+
+    }
+    return true;
+
+
+
   }
 
   //Filter response packets using the target node/unique id filters
@@ -1665,3 +1727,31 @@ void A7105_Mesh_Set_Node_Registers(struct A7105_Mesh* node,
   node->registers = regs;
   node->num_registers = num_regs;
 }
+
+
+byte _A7105_Mesh_Get_Packet_Seq(byte* packet)
+{
+  return (packet[A7105_MESH_PACKET_HOP_SEQ] & A7105_MESH_PACKET_SEQ_MASK) >> 4; 
+}
+
+void _A7105_Mesh_Set_Packet_Seq(byte* packet, byte sequence)
+{
+  packet[A7105_MESH_PACKET_HOP_SEQ] = 
+      packet[A7105_MESH_PACKET_HOP_SEQ] & A7105_MESH_PACKET_HOP_MASK |
+      ((sequence << 4) & A7105_MESH_PACKET_SEQ_MASK);
+
+}
+
+byte _A7105_Mesh_Get_Packet_Hop(byte* packet)
+{
+  return (packet[A7105_MESH_PACKET_HOP_SEQ] & A7105_MESH_PACKET_HOP_MASK); 
+}
+
+void _A7105_Mesh_Set_Packet_Hop(byte* packet, byte hop)
+{
+  packet[A7105_MESH_PACKET_HOP_SEQ] = 
+      (packet[A7105_MESH_PACKET_HOP_SEQ] & A7105_MESH_PACKET_SEQ_MASK) |
+      (hop & A7105_MESH_PACKET_HOP_MASK);
+}
+
+
