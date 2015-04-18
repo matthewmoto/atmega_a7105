@@ -1737,7 +1737,7 @@ byte _A7105_Mesh_Get_Packet_Seq(byte* packet)
 void _A7105_Mesh_Set_Packet_Seq(byte* packet, byte sequence)
 {
   packet[A7105_MESH_PACKET_HOP_SEQ] = 
-      packet[A7105_MESH_PACKET_HOP_SEQ] & A7105_MESH_PACKET_HOP_MASK |
+      (packet[A7105_MESH_PACKET_HOP_SEQ] & A7105_MESH_PACKET_HOP_MASK) |
       ((sequence << 4) & A7105_MESH_PACKET_SEQ_MASK);
 
 }

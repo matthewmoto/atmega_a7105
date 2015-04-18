@@ -18,6 +18,8 @@
 
 //Maximum number of packet header/sequence/unique sets 
 //to keep for avoiding reacting to previously seen (and reacted-to) packets
+//IMPORTANT: if this ever goes above 16, make the sequence number a whole byte!
+
 #define A7105_MESH_HANDLED_PACKET_CACHE_LENGTH 8 
 
 //Maximum number of times a packet can be repeated on the mesh
