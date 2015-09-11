@@ -95,6 +95,33 @@ in the packets themselves). All packets will be repeated, except:
 
 See details of hop count below in the Packet Characteristics description
 
+### Response Repeating ###
+Like the packet repeating above, nodes also maintain a cache of responses to requests they've serviced
+(PING, GET_REGISTER, etc) and repeat those a few times for every response to overcome the 
+inevitable packet collisions that come with multi-millisecond transmission times for packets.
+
+Without this, there is a good chance that responses will get lost in the ether for nodes
+based on random timing. Since the sender has no way to know their response made it through, we 
+re-send them a few times (tunable, currently 4) at random intervals to make sure they got there.
+
+The repeated responses have the *same* sequence number as the original packet so the general repeaters
+running on other nodes can filter it out after their first repeat and not end up flooding the mesh.
+
+As an implementors note, the repeats for things like REGISTER_VALUE can have different values than the 
+original transmitted packet if it has changed from the time of the original response. This allows
+the implementation to avoid caching entire packets in memory (a very sparse resource on AVR microcontrollers).
+
+The packets that are currently repeated are:
+  * PONG
+  * NUM_REGISTERS
+  * REGISTER_NAME
+  * REGISTER_VALUE
+  * SET_REGISTER_ACK
+
+### Request Repeating ###
+
+TBD
+
 ### Ignoring Duplicate Packets ###
 
 With packet repeating functionality comes the necessity of differentating packets a
