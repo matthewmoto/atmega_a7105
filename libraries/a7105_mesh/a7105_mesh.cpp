@@ -593,10 +593,12 @@ A7105_Mesh_Status A7105_Mesh_Ping(struct A7105_Mesh* node,
 
 void _A7105_Mesh_Handle_Ping(struct A7105_Mesh* node)
 {
-  //If we're on a mesh and we see a PING packet, respond to it
-  //with a PONG
+  //If we're on a mesh and we see a PING packet that we didn't send,
+  //respond to it with a PONG
+
   if (node->state != A7105_Mesh_NOT_JOINED &&
       node->state != A7105_Mesh_JOINING &&
+      node->unique_id != A7105_Util_Get_Pkt_Unique_Id(node->packet_cache) &&
       _A7105_Mesh_Filter_Packet(node,A7105_MESH_PKT_PING,true))
   {
     //Mark the request as handled and push back a PONG
@@ -1362,7 +1364,7 @@ void _A7105_Mesh_Update_Response_Repeats(struct A7105_Mesh* node)
   //If we're on the mesh, we have packets to repeat,
   //and it's been long enough since our last repeat (device id delay)
   if (node->state != A7105_Mesh_NOT_JOINED &&
-      node->state != A7105_Mesh_JOINING &&
+      //node->state != A7105_Mesh_JOINING &&
       node->response_repeat_cache_size > 0 &&
       millis() - node->last_response_repeat_sent_time > (unsigned long)node->random_delay)
   {
@@ -1875,19 +1877,24 @@ void _A7105_Mesh_Handle_RX(struct A7105_Mesh* node)
   //Fill our packet cache
   //TODO: Maybe we can pass radio errors back to the calling
   //code at some point?
+  byte bogus_read = 0;
   if ((rx_status = A7105_ReadData(&(node->radio), node->packet_cache,A7105_MESH_PACKET_SIZE)) != A7105_STATUS_OK)
   {
     #ifdef A7105_MESH_DEBUG
     A7105_Mesh_SerialDump("Error reading packet data (probably a collision)\r\n");
-    Serial.println(rx_status);
+    //Serial.println(rx_status);
     #endif
-    //HACK HACK: disabling the bail out to get missed packet for debugging
+    bogus_read = 1;
     //return;
   }
 
   //Strobe the radio back to the RX state (it auto-jumps back to standby)
   A7105_Easy_Listen_For_Packets(&(node->radio), A7105_MESH_PACKET_SIZE);
   
+  //If we had a read error above (during A7105_ReadData()), bail here now that
+  //we're listening again
+  if (bogus_read)
+    return
 
   #ifdef A7105_MESH_DEBUG
   //DEBUG

@@ -131,17 +131,17 @@ void setup() {
                                                     RADIO1_SELECT_PIN,
                                                     RADIO1_WTR_PIN,
                                                     RADIO_IDS,
-                                                    A7105_DATA_RATE_100Kbps,
+                                                    A7105_DATA_RATE_250Kbps,
                                                     0,
-                                                    A7105_TXPOWER_10mW,
+                                                    A7105_TXPOWER_150mW,
                                                     0);
   A7105_Mesh_Status success2 = A7105_Mesh_Initialize(&(context.radio2),
                                                      RADIO2_SELECT_PIN,
                                                      RADIO2_WTR_PIN,
                                                      RADIO_IDS,
-                                                     A7105_DATA_RATE_100Kbps,
+                                                     A7105_DATA_RATE_250Kbps,
                                                      0,
-                                                     A7105_TXPOWER_10mW,
+                                                     A7105_TXPOWER_150mW,
                                                      0);
   putstring("Radio 1 Init: ");
   Serial.print(success == A7105_Mesh_STATUS_OK);
