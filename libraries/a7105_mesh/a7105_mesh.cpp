@@ -15,6 +15,7 @@ void DebugHeader(struct A7105_Mesh* node)
   A7105_Mesh_SerialDump(" : (");
   Serial.print(node->unique_id,HEX);
   A7105_Mesh_SerialDump(") ");
+  Serial.flush();
 }
 #endif
 
@@ -1650,7 +1651,9 @@ void _A7105_Mesh_Send_Response(struct A7105_Mesh* node)
       packet_type == A7105_MESH_PKT_REGISTER_NAME ||
       packet_type == A7105_MESH_PKT_REGISTER_VALUE ||
       packet_type == A7105_MESH_PKT_SET_REGISTER_ACK)
+  { 
     _A7105_Mesh_Append_Response_Repeat(node); 
+  }
 
   //Push the packet to the radio
   A7105_WriteData(&(node->radio), node->packet_cache, A7105_MESH_PACKET_SIZE);
@@ -1675,6 +1678,9 @@ void _A7105_Mesh_Send_Response(struct A7105_Mesh* node)
     //delay(10);
   }
 
+  //Update the response repeater timer (so we don't send another right away)
+  node->last_response_repeat_sent_time = millis();
+
   //Tell the radio to go back to listening
   A7105_Easy_Listen_For_Packets(&(node->radio), A7105_MESH_PACKET_SIZE);
 
@@ -1687,6 +1693,11 @@ void _A7105_Mesh_Send_Request(struct A7105_Mesh* node)
 
   //Bump the sequence number
   node->sequence_num = (node->sequence_num + 1) % 16;
+
+  //Reset the request repeater state
+  node->request_repeat_count=0;
+  node->last_request_repeat_sent_time=node->request_sent_time;
+  
 
   //If the packet isn't a join, save a copy in case we're interrupted
   byte packet_type = node->packet_cache[A7105_MESH_PACKET_TYPE];
@@ -1885,7 +1896,6 @@ void _A7105_Mesh_Handle_RX(struct A7105_Mesh* node)
     //Serial.println(rx_status);
     #endif
     bogus_read = 1;
-    //return;
   }
 
   //Strobe the radio back to the RX state (it auto-jumps back to standby)
@@ -1894,7 +1904,7 @@ void _A7105_Mesh_Handle_RX(struct A7105_Mesh* node)
   //If we had a read error above (during A7105_ReadData()), bail here now that
   //we're listening again
   if (bogus_read)
-    return
+    return;
 
   #ifdef A7105_MESH_DEBUG
   //DEBUG
