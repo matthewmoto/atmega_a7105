@@ -51,7 +51,12 @@ const char* A7105_Mesh_Register_Get_Error(struct A7105_Mesh* node)
 
 void _A7105_Mesh_Register_Clear_Error(struct A7105_Mesh_Register* reg)
 {
-  memset(reg->_data,0,A7105_MESH_MAX_REGISTER_ARRAY_SIZE);
+  //MM: Avoiding resetting the buffer since this may nuke storage data
+  //    in the hosting node. TODO: Figure out a way to pass error messages
+  //    back to the calling node without destroying our data (maybe a 
+  //    calling-code hosted buffer? or is there something internal we can
+  //    use?)
+  //memset(reg->_data,0,A7105_MESH_MAX_REGISTER_ARRAY_SIZE);
   reg->_error_set = 0;
 }
 
@@ -150,6 +155,18 @@ byte A7105_Mesh_Util_GetRegisterValueU32(struct A7105_Mesh_Register* reg,uint32_
     (*dest) |= reg->_data[offset+x];
   }
   return true;
+}
+
+int A7105_Mesh_Util_RegisterNameCmp(struct A7105_Mesh_Register* a, struct A7105_Mesh_Register* b)
+{
+  if (a->_name_len &&
+      a->_name_len == b->_name_len)
+  {
+    return memcmp(a->_data,
+           b->_data,
+           (size_t)a->_name_len);
+  }
+  return 1;
 }
 
 void A7105_Mesh_Register_Copy(struct A7105_Mesh_Register* dest, struct A7105_Mesh_Register* src)
@@ -345,6 +362,7 @@ A7105_Mesh_Status A7105_Mesh_Join(struct A7105_Mesh* node,
 
   //Set up our state, requested node ID and track our first tx time
   node->state = A7105_Mesh_JOINING;
+  node->target_unique_id = 0; //clear packet receive filter
   node->node_id = node_id;
   node->join_first_tx_time = millis();
   
@@ -670,7 +688,6 @@ A7105_Mesh_Status A7105_Mesh_GetNumRegisters(struct A7105_Mesh* node,
   node->state = A7105_Mesh_GET_NUM_REGISTERS;
   node->target_node_id = node_id; //only read responses from node_id
   node->target_unique_id = target_unique_id; //filter (optional) unique ID 
-
   //Set our completed callback
   _A7105_Mesh_Prep_Finishing_Callback(node,
                                       get_num_registers_finished_callback,
@@ -852,6 +869,10 @@ A7105_Mesh_Status A7105_Mesh_GetRegister(struct A7105_Mesh* node,
   //Update our state and target filters
   node->state = A7105_Mesh_GET_REGISTER;
   //reset target filters, GET_REGISTER is a global operation
+  //MM: This shouldn't be necesary since we only use the targets 
+  //    for GetNumRegisters and GetRegisterName, however, we 
+  //    probably do need to reset the unique id filter for every  
+  //    op...
   node->target_node_id = 0; 
   node->target_unique_id = 0; 
 
@@ -870,6 +891,9 @@ A7105_Mesh_Status A7105_Mesh_GetRegister(struct A7105_Mesh* node,
   {
     return A7105_Mesh_INVALID_REGISTER_LENGTH;
   }
+
+  //Cache the register name to filter on receipt of the packet
+  A7105_Mesh_Register_Copy(&(node->register_cache),reg);
 
   //Push the request to the radio
   _A7105_Mesh_Send_Request(node);
@@ -929,6 +953,7 @@ void _A7105_Mesh_Handle_RegisterValue(struct A7105_Mesh* node)
     A7105_Mesh_Status ret = A7105_Mesh_STATUS_OK;
 
     //bail if this wasn't the register we requested
+    //(Register name is copied in the GetRegister() method at start)
     if (!_A7105_Mesh_Cmp_Packet_Register(node->packet_cache,
                                               &(node->register_cache),
                                               false)) 
@@ -1097,6 +1122,8 @@ void _A7105_Mesh_Handle_SetRegister(struct A7105_Mesh* node)
 
    //Zero out the register error for next time
    _A7105_Mesh_Register_Clear_Error(&(node->registers[register_index]));
+ 
+
   }
 }
 
@@ -1151,6 +1178,9 @@ void _A7105_Mesh_Handle_RegisterValue_Broadcast(struct A7105_Mesh* node)
   //NODE-ID (0), consider it a broadcast
   //If we sent a GET_REGISTER, and see a REGISTER_VALUE come back
   //for the register we queried
+
+  //HACK: Ensure we treat the packet as a request below during filterin
+  //      so the unique_id filter doesn't ignore these 
  if (node->state != A7105_Mesh_JOINING &&
      node->state != A7105_Mesh_NOT_JOINED &&
      node->register_value_broadcast_callback != NULL &&
@@ -1638,6 +1668,12 @@ void _A7105_Mesh_Prep_Packet_Header(struct A7105_Mesh* node,
   node->packet_cache[A7105_MESH_PACKET_UNIQUE_ID] = (node->unique_id)>>8;
   node->packet_cache[A7105_MESH_PACKET_UNIQUE_ID+1] = (node->unique_id) & 0xFF;
 
+  //Insert target node-id / unique-id packet sections for the relevant requests
+  if (packet_type == A7105_MESH_PKT_GET_NUM_REGISTERS ||
+      packet_type == A7105_MESH_PKT_GET_REGISTER_NAME)
+  {
+    node->packet_cache[A7105_MESH_PACKET_TARGET_ID] = node->target_node_id;
+  }
 }
 
 void _A7105_Mesh_Send_Response(struct A7105_Mesh* node)
@@ -1747,7 +1783,9 @@ byte _A7105_Mesh_Util_Register_To_Packet(byte* packet,
 {
   //Sanity check the lengths
   int total_size = (int)reg->_name_len + (int)reg->_data_len;
-  if (total_size < 2 || total_size > A7105_MESH_MAX_REGISTER_ARRAY_SIZE)
+  if (total_size < 1 ||
+      total_size > A7105_MESH_MAX_REGISTER_ARRAY_SIZE ||
+      (total_size < 2 && include_value))
     return false;
   
   //Copy the name
@@ -1760,9 +1798,23 @@ byte _A7105_Mesh_Util_Register_To_Packet(byte* packet,
   //Optionally copy the value
   if (include_value)
   {
+    /*A7105_Mesh_SerialDump("Writing: ");
+    Serial.print(reg->_data_len,DEC);
+    A7105_Mesh_SerialDump(" bytes to packet payload\r\n");
+    */
+    
     packet[offset] = reg->_data_len;
     offset++;
     memcpy(&(packet[offset]),&(reg->_data[reg->_name_len]),reg->_data_len);
+   
+    //DEBUG: Print the first 32 bytes of the packet
+    /*
+    for (int x = 0;x<32;x++)
+    {
+      Serial.print(packet[x],HEX);
+      Serial.print(" ");      
+    } 
+    Serial.println(" DONE");*/
   }
   return true;
 }
@@ -1829,6 +1881,7 @@ byte _A7105_Mesh_Cmp_Packet_Register(byte* packet,
              &(packet[A7105_MESH_PACKET_NAME_START]),
              (size_t)expected_len) == 0)
   {
+    
     if (include_value)
     {
     //check the values if selected
@@ -1840,10 +1893,12 @@ byte _A7105_Mesh_Cmp_Packet_Register(byte* packet,
       return true;
     }
     else
+    {
       return true;
+    }
   }
-  return false;
 
+  return false;
 }
 
 void _A7105_Mesh_Handling_Request(struct A7105_Mesh* node,

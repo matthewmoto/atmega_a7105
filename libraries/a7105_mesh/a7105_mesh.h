@@ -203,6 +203,7 @@ byte A7105_Mesh_Util_GetRegisterNameStr(struct A7105_Mesh_Register* reg,char* bu
 byte A7105_Mesh_Util_GetRegisterValueStr(struct A7105_Mesh_Register* reg,char* buffer,int buffer_len);
 byte A7105_Mesh_Util_GetRegisterValueU32(struct A7105_Mesh_Register* reg,uint32_t* dest);
 
+int A7105_Mesh_Util_RegisterNameCmp(struct A7105_Mesh_Register* a, struct A7105_Mesh_Register* b);
 
 void A7105_Mesh_Register_Copy(struct A7105_Mesh_Register* dest, struct A7105_Mesh_Register* src);
 
@@ -423,7 +424,8 @@ void _A7105_Mesh_Update_Ping(struct A7105_Mesh* node);
       Side-Effects/Notes: If this method completes successfully, the number of registers will be stored in node->num_registers_cache.
                           Otherwise, an error status will be returned or sent to the callback (if specified).
                           Also, responder node-ID and unique-ID will be stored in node->responder_node_id and 
-                          resonder->responder_unique_id respectively
+                          resonder->responder_unique_id respectively. Also, the num_registers_cache will remain usable by the client
+                          until the next call to GetNumRegisters.
 
       Returns:
         * A7105_Mesh_STATUS_OK on success or if get_num_registers_callback is NULL.
@@ -485,11 +487,10 @@ void _A7105_Mesh_Handle_RegisterName(struct A7105_Mesh* node);
 
 
 /*
-    A7105_Mesh_Status A7105_Mesh_GetRegister(struct A7105_Mesh* node, byte* register_name, byte register_name_len, void (*get_register_callback)(A7105_Mesh_Status))
+    A7105_Mesh_Status A7105_Mesh_GetRegister(struct A7105_Mesh* node, struct A7105_Mesh_Register* reg, void (*get_register_callback)(A7105_Mesh_Status))
       * node: Must be a node successfully initialized with A7105_Mesh_Initialize() and the node must be successfully
               joined to a mesh.
-      * register_name: Byte array of length register_name_len).
-      * register_name_len: Length of the array passed as 'register_name' in bytes.
+      * reg: Points to a register whose name is the name for which we're searching. This can be set using the utility method A7105_Mesh_Util_SetRegisterNameStr().
       * get_register_callback: The function called when the GET_REGISTER operation completes or times out. If this is NULL,
                                A7105_Mesh_GetRegister will use an internal callback and block until the operation completes
                                or times out.

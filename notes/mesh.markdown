@@ -283,7 +283,7 @@ hop count cannot be used for this reliably).
 
 
   The GET_NUM_REGISTERS packet looks like this:
-    * GET_NUM_REGISTERS | HOP/SEQ | NODE_ID | UNIQUE_ID | TARGET_NODE_NUM
+    * GET_NUM_REGISTERS | HOP/SEQ | NODE_ID | UNIQUE_ID | TARGET_NODE_NUM 
   
   The NUM_REGISTERS packet response looks like this:
     * NUM_REGISTERS | HOP/SEQ | NODE_ID | UNIQUE_ID | NUM_REGISTERS
