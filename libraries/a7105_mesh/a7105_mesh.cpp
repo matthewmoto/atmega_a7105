@@ -183,6 +183,45 @@ void A7105_Mesh_Set_Context(struct A7105_Mesh* node,void* context_obj)
   node->client_context_obj = context_obj;
 }
 
+uint16_t _A7105_Mesh_Calculate_Random_Delay(A7105_DataRate data_rate)
+{
+  //calculate the max time (full 64 bit packets) based on the data rate
+  //and CRC/FEC options (assume they're on). NOTE: These are from
+  //the A7105 datasheet (pg 67)
+  uint16_t packet_transmit_time_ms = 0;
+  switch (data_rate)
+  {
+    case A7105_DATA_RATE_250Kbps:
+      packet_transmit_time_ms = 4;
+      break;
+    case A7105_DATA_RATE_125Kbps:
+      packet_transmit_time_ms = 8;
+      break;
+    case A7105_DATA_RATE_100Kbps:
+      packet_transmit_time_ms = 10; //estimated, not in datasheet
+      break;
+    case A7105_DATA_RATE_50Kbps:
+      packet_transmit_time_ms = 20;
+      break;
+    case A7105_DATA_RATE_25Kbps:
+      packet_transmit_time_ms = 40; //est.
+      break;
+    case A7105_DATA_RATE_10Kbps:
+      packet_transmit_time_ms = 100; //est.
+      break;
+    case A7105_DATA_RATE_2Kbps:
+      packet_transmit_time_ms = 494; 
+      break;
+  }
+
+
+  //Determine a time between 2 and N packet transmissions
+  //where N is the expected number of mesh nodes (max 255).
+  //HACK: For now, just set this at 20, since more than that 
+  //talking at once would be crazy
+  return packet_transmit_time_ms * (uint16_t)(random(2,20));
+  
+}
 
 A7105_Mesh_Status A7105_Mesh_Initialize(struct A7105_Mesh* node, 
                                         int chip_select_pin,
@@ -205,10 +244,9 @@ A7105_Mesh_Status A7105_Mesh_Initialize(struct A7105_Mesh* node,
                                                  1,1);
   //Set up our random generator seed
   //HACK: set up randomSeed 0 so our ID's stay consistent in debug
+  //random(0);
   //NUKEME for production
-  randomSeed(analogRead(unconnected_analog_pin));
-  //randomSeed(0);
-  //random(1024);
+  randomSeed(A7105_Mesh_Get_Random_Seed(31,unconnected_analog_pin));
 
   //Init the node state
   node->state = A7105_Mesh_NOT_JOINED;
@@ -216,7 +254,9 @@ A7105_Mesh_Status A7105_Mesh_Initialize(struct A7105_Mesh* node,
   //node->registers = NULL;
   node->unique_id = (uint16_t)(random(0xFFFF) + 1); //1-0xFFFF unique ID. 0 means uninitialized
 ;
-  node->random_delay = (uint16_t)(random(A7105_MESH_MIN_RANDOM_DELAY,A7105_MESH_MAX_RANDOM_DELAY));
+  
+  //Caculate an appropriate collision random-delay based on our data rate
+  node->random_delay = _A7105_Mesh_Calculate_Random_Delay(data_rate);
 
   //request tracking variables
   node->request_sent_time = 0;
@@ -1181,15 +1221,15 @@ void _A7105_Mesh_Handle_RegisterValue_Broadcast(struct A7105_Mesh* node)
 
   //HACK: Ensure we treat the packet as a request below during filterin
   //      so the unique_id filter doesn't ignore these 
+  
  if (node->state != A7105_Mesh_JOINING &&
      node->state != A7105_Mesh_NOT_JOINED &&
      node->register_value_broadcast_callback != NULL &&
      node->packet_cache[A7105_MESH_PACKET_NODE_ID] == 0 &&
      _A7105_Mesh_Filter_Packet(node,A7105_MESH_PKT_REGISTER_VALUE,true))
   {
-
     //bail if this register/value combo was already processed from a broadcast
-    if (!_A7105_Mesh_Cmp_Packet_Register(node->packet_cache,
+    if (_A7105_Mesh_Cmp_Packet_Register(node->packet_cache,
                                          node->broadcast_cache,
                                          true)) 
       return;
@@ -1750,6 +1790,15 @@ void _A7105_Mesh_Send_Request(struct A7105_Mesh* node)
                             
 void _A7105_Mesh_Send_Broadcast(struct A7105_Mesh* node)
 {
+  /*Serial.print("TX:[");
+  for (int x = 0; x<16;x++)
+  {
+    Serial.print(node->packet_cache[x],HEX);
+    Serial.print("] [");
+  }
+  Serial.print("...");
+  */
+
   //Bump the sequence number
   node->sequence_num = (node->sequence_num + 1) % 16;
   _A7105_Mesh_Send_Response(node);
@@ -2047,12 +2096,13 @@ byte _A7105_Mesh_Filter_Packet(struct A7105_Mesh* node,
     //sequence number, ignore it
     for (int x = 0;x<A7105_MESH_HANDLED_PACKET_CACHE_LENGTH;x++)
     {
-    
       if (node->packet_cache[A7105_MESH_PACKET_TYPE] == node->handled_packet_cache[x][A7105_MESH_HANDLED_PACKET_OP] &&
           _A7105_Mesh_Get_Packet_Seq(node->packet_cache) == node->handled_packet_cache[x][A7105_MESH_HANDLED_PACKET_SEQ] &&
            node->handled_packet_cache[x][A7105_MESH_HANDLED_PACKET_UNIQUE_ID] == node->packet_cache[A7105_MESH_PACKET_UNIQUE_ID] && 
   node->handled_packet_cache[x][A7105_MESH_HANDLED_PACKET_UNIQUE_ID+1] == node->packet_cache[A7105_MESH_PACKET_UNIQUE_ID+1])
+      {
         return false;
+      }
 
     }
     return true;
@@ -2105,3 +2155,31 @@ void _A7105_Mesh_Set_Packet_Hop(byte* packet, byte hop)
 }
 
 
+
+byte _A7105_Bit_out(int analogPin)
+{
+  uint16_t prev=analogRead(analogPin);
+  byte bit1,bit0;
+  uint16_t ret;
+  for (int x = 0;x<99;x++)
+  {
+    ret = analogRead(analogPin);
+    bit1=prev!=ret;
+    prev = ret;  
+    ret = analogRead(analogPin);
+    bit0=prev!=ret;
+    if (bit1 != bit0) break;
+  }
+  return bit1 ? 1 : 0;
+}
+
+uint32_t A7105_Mesh_Get_Random_Seed(byte noOfBits, int analogPin)
+{
+  // return value with 'noOfBits' random bits set
+  unsigned long seed=0;
+  for (int i=0;i<noOfBits;++i)
+  {
+    seed = (seed<<1) | _A7105_Bit_out(analogPin);
+  }
+  return seed;
+}

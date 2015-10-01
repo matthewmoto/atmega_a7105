@@ -70,7 +70,7 @@
 #define A7105_MESH_RESPONSE_REPEAT_DATA 3
 
 //Debug stuff
-#define A7105_MESH_DEBUG
+//#define A7105_MESH_DEBUG
 
 #ifdef A7105_MESH_DEBUG
 #define A7105_Mesh_SerialDump(x) SerialDump_P(PSTR(x))
@@ -569,12 +569,13 @@ void _A7105_Mesh_Handle_SetRegisterAck(struct A7105_Mesh* node);
     * reg: The register to use as a cache for broadcast packets
 
   Side-Effects/Notes:
-    * The value being broadcast is stored in node->register_cache when 'callback' is called
+    * The value being broadcast is stored in node->broadcast_cache when 'callback' is called
     * The node *may* be involved in other operations when 'callback' is called so 
       it's best to not depend on sending requests from 'callback'
     * Important! The callback specified may be called multiple times
       if repeated packets come in with the same value. 
-    * 'reg' must remain in scope as long as the node is listening.
+    * 'reg' must remain in scope as long as the node is listening since 
+      node->broadcast_cache is simply a pointer to it (they can be used interchangeably).
 
     * To stop listening, just call with NULL,NULL for callback,reg
 
@@ -863,5 +864,9 @@ byte _A7105_Mesh_Get_Packet_Hop(byte* packet);
 
 void _A7105_Mesh_Set_Packet_Hop(byte* packet, byte hop);
 
+
+byte _A7105_Bit_out(int analogPin); 
+
+uint32_t A7105_Mesh_Get_Random_Seed(byte noOfBits, int analogPin);
 
 #endif
