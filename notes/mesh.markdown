@@ -292,7 +292,7 @@ hop count cannot be used for this reliably).
     * GET_REGISTER_NAME | HOP/SEQ | NODE_ID | UNIQUE_ID | TARGET_NODE_NUM | REGISTER_INDEX
 
   The response REGISTER_NAME packet looks like this:
-    * REGISTER_NAME | HOP/SEQ | NODE_ID | UNIQUE_ID | REGISTER_NAME_LEN |REGISTER_NAME
+    * REGISTER_NAME | HOP/SEQ | NODE_ID | UNIQUE_ID | REGISTER_NAME_LEN |REGISTER_NAME | REGISTER_INDEX 
 
   Note: If the register index is invalid, the response should just 
         have a REGISTER_NAME_LEN of 0

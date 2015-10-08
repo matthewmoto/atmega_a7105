@@ -192,6 +192,7 @@ struct A7105
                        //-1 if no interrupt pin specified 
   int _USE_CRC; //0/1 if CRC is disabled/enabled on the radio
   int _USE_FEC; //0/1 if FEC is disabled/enabled on the radio
+  byte _DATA_RATE; //Remember our current data rate setting
 };
 
 void mm_debug(struct A7105* radio);

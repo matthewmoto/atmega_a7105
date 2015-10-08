@@ -339,6 +339,7 @@ d initalize all radios before using any of them to avoid interfering with the SP
 
   //Set the datarate 
   A7105_WriteReg(radio,A7105_0E_DATA_RATE, (byte)data_rate);
+  radio->_DATA_RATE = data_rate;
 
   //This set's a frequency deviation setting.
   //There is a table on pg. 21, not sure exactly what this is for...

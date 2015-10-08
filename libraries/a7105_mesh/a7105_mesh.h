@@ -22,8 +22,14 @@
 
 #define A7105_MESH_HANDLED_PACKET_CACHE_LENGTH 8 
 
+//if we see a packet with a sequence number 3 or less below the 
+//one in the cache, we can "expire" that cache item so we don't 
+//ignore legitimate packets that have occurred since the sequence 
+//number rolled over
+#define A7105_MESH_HANDLED_PACKET_CACHE_SEQ_EXPIRE 3 
+
 //Maximum number of times a packet can be repeated on the mesh
-#define A7105_MESH_MAX_HOP_COUNT 10
+#define A7105_MESH_MAX_HOP_COUNT 6
 
 /////////Join process constants (milliseconds)///////////
 
@@ -34,21 +40,12 @@
 #define A7105_MESH_MIN_JOIN_RETRANSMIT_DELAY 100 
 #define A7105_MESH_MAX_JOIN_RETRANSMIT_DELAY 600
 
-//These define the window for the random delay before doing
-//things like repeating packets or other mass-response actvities
-#define A7105_MESH_MAX_RANDOM_DELAY 200
-#define A7105_MESH_MIN_RANDOM_DELAY 20
-
-//Milliseconds after handling a request that we'll ignore duplicate
-//requests (from the same node/unique ID)
-#define A7105_MESH_REQUEST_HANDLING_DEBOUNCE 200 
-
 //Time after which we will assume we've heard from everybody
 //on the mesh
-#define A7105_MESH_PING_TIMEOUT 2000 
+#define A7105_MESH_PING_TIMEOUT 4000 
 
 //Time after which directed requests will be considered timed-out
-#define A7105_MESH_REQUEST_TIMEOUT 3000 
+#define A7105_MESH_REQUEST_TIMEOUT 4000 
 
 //Max number of response repeats we have going on at once
 //#define A7105_MESH_RESPONSE_REPEAT_CACHE_SIZE 4
@@ -58,7 +55,7 @@
 #define A7105_MESH_RESPONSE_REPEAT_ITEM_SIZE 4
 
 //Max number of times to repeat a particular response
-#define A7105_MESH_RESPONSE_MAX_REPEAT 4 
+#define A7105_MESH_RESPONSE_MAX_REPEAT 6 
 
 //Max number of times to repeat the current request
 #define A7105_MESH_REQUEST_MAX_REPEAT 4
@@ -225,6 +222,7 @@ struct A7105_Mesh
   unsigned long request_sent_time;
   byte target_node_id;
   uint16_t target_unique_id;
+  byte target_register_index;
 
   //////// Response Tracking /////////
   //byte last_request_handled[A7105_MESH_PACKET_SIZE];
@@ -751,6 +749,12 @@ byte _A7105_Mesh_Util_Register_To_Packet(byte* packet,
                                          struct A7105_Mesh_Register* reg,
                                          byte include_value);
 
+//Grabs the register index part of a REGISTER_NAME packet
+byte _A7105_Mesh_Util_Get_Register_Index(byte* packet);
+
+//Sets the register index of a REGISTER_NAME packet
+byte _A7105_Mesh_Util_Set_Register_Index(byte* packet, byte index);
+
 //NOTE: if include_value = true, include name is assumed true also
 //Returns true on success, false for bogus values.
 byte _A7105_Mesh_Util_Packet_To_Register(byte* packet,
@@ -779,6 +783,19 @@ byte _A7105_Mesh_Cmp_Packet_Register(byte* packet,
 */
 void _A7105_Mesh_Handling_Request(struct A7105_Mesh* node,
                                   byte* packet);
+
+/*
+  _A7105_Mesh_Update_Handled_Packet_Cache(struct A7105_Mesh* node):
+    * node: An initialized struct A7105_Mesh node
+
+    This internal function updatse the node state to expire any packets
+    in the handled packet cache that have a sequence number that has been
+    determined to be likely seen again soon (so we don't accidentially filter
+    packets that are legitimate new requests with the same sequence number as
+    old ones).
+*/
+void _A7105_Mesh_Update_Handled_Packet_Cache(struct A7105_Mesh* node);
+
 
 /*
   _A7105_Mesh_Prep_Finishing_Callback:
