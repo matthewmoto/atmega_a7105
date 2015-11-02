@@ -1,4 +1,37 @@
-/*
+/*Copyright (C) 2015 Matthew Meno
+
+This file is part of ATmega A7105.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+(1) Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer. 
+
+(2) Redistributions in binary form must reproduce the above copyright
+notice, this list of conditions and the following disclaimer in
+the documentation and/or other materials provided with the
+distribution.  
+
+(3)The name of the author may not be used to
+endorse or promote products derived from this software without
+specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR
+IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT,
+INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING
+IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+
+----
+
   This library sits right on top of the A7105 Hardware and has all the low-level SPI utilities
   to access registers/FIFO's and whatnot on the chip. This is the most powerful, but least valuable
   aspect of this library. The more important things here are:
@@ -14,7 +47,6 @@
     an ATMEGA328P. The use of other chips is untested.
 
     This library was written using the Arduino-1.6.1 distribution (includes the transactional SPI library).
-    
 
   Hardware Notes:
     This library was written/tested using an Arduino Pro Mini and the XL7105-SY-B breakouts from DX.com. these
