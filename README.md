@@ -225,7 +225,7 @@ code. These are pretty simple and probably not very useful.
 
 All packets should have the following characteristics:
 
-OPERATION | SEQ-NUM/HOP-COUNT | NODE_ID | UNIQUE_ID | <operation-specific-data>
+```OPERATION | SEQ-NUM/HOP-COUNT | NODE_ID | UNIQUE_ID | <operation-specific-data>```
 
 Packets are 64 bytes long at a maximum, operation specific data
 is a maximum of 60 bytes long.
@@ -312,34 +312,34 @@ hop count cannot be used for this reliably).
   the Presence Table is considered accurate for the next operation.
 
   The PING packet looks like this:
-    * PING | HOP/SEQ | NODE_ID | UNIQUE_ID
+    `PING | HOP/SEQ | NODE_ID | UNIQUE_ID`
 
   All nodes on the network respond (after a node-id delay) with:
-    * PONG | HOP/SEQ | NODE_ID | UNIQUE_ID 
+    `PONG | HOP/SEQ | NODE_ID | UNIQUE_ID`
 
 ## Get Register Names (directed, retry) ##
 
-  Getting register names is available to make the mesh discoverable
-  with interactive terminals or more powerful hardware. The process
-  of getting all registers on the network is:
-    1. Ping the mesh to get presence info
-    2. Iterate each found node and send a GET_REGISTERS packet
-    3. The node responds with the number of registers
-    4. Iterate the number of registers and GET_REGISTER_NAME for each
-    5. The node responds with the name of each register 
+Getting register names is available to make the mesh discoverable
+with interactive terminals or more powerful hardware. The process
+of getting all registers on the network is:
+ 1. Ping the mesh to get presence info
+ 2. Iterate each found node and send a GET_REGISTERS packet
+ 3. The node responds with the number of registers
+ 4. Iterate the number of registers and GET_REGISTER_NAME for each
+ 5. The node responds with the name of each register 
 
 
   The GET_NUM_REGISTERS packet looks like this:
-    * GET_NUM_REGISTERS | HOP/SEQ | NODE_ID | UNIQUE_ID | TARGET_NODE_NUM 
+    `GET_NUM_REGISTERS | HOP/SEQ | NODE_ID | UNIQUE_ID | TARGET_NODE_NUM`
   
   The NUM_REGISTERS packet response looks like this:
-    * NUM_REGISTERS | HOP/SEQ | NODE_ID | UNIQUE_ID | NUM_REGISTERS
+    `NUM_REGISTERS | HOP/SEQ | NODE_ID | UNIQUE_ID | NUM_REGISTERS`
 
-  the GET_REGISTER_NAME packet looks like this:
-    * GET_REGISTER_NAME | HOP/SEQ | NODE_ID | UNIQUE_ID | TARGET_NODE_NUM | REGISTER_INDEX
+  The GET_REGISTER_NAME packet looks like this:
+    `GET_REGISTER_NAME | HOP/SEQ | NODE_ID | UNIQUE_ID | TARGET_NODE_NUM | REGISTER_INDEX`
 
   The response REGISTER_NAME packet looks like this:
-    * REGISTER_NAME | HOP/SEQ | NODE_ID | UNIQUE_ID | REGISTER_NAME_LEN |REGISTER_NAME | REGISTER_INDEX 
+    `REGISTER_NAME | HOP/SEQ | NODE_ID | UNIQUE_ID | REGISTER_NAME_LEN |REGISTER_NAME | REGISTER_INDEX`
 
   Note: If the register index is invalid, the response should just 
         have a REGISTER_NAME_LEN of 0
@@ -352,12 +352,12 @@ hop count cannot be used for this reliably).
   with a directed packet to the original requester.
 
   The GET_REGISTER packet looks like this:
-    * GET_REGISTER | HOP/SEQ | NODE_ID | UNIQUE_ID | REGISTER_NAME_LEN | REGISTER_NAME
+    `GET_REGISTER | HOP/SEQ | NODE_ID | UNIQUE_ID | REGISTER_NAME_LEN | REGISTER_NAME`
    
   The responder (if there is one), sends back a REGISTER_VALUE packet like this:
-    * REGISTER_VALUE | HOP/SEQ | NODE_ID | UNIQUE_ID | REGISTER_NAME_LEN | REGISTER_NAME | REGISTER_VALUE_LEN | REGISTER_VALUE
+    `REGISTER_VALUE | HOP/SEQ | NODE_ID | UNIQUE_ID | REGISTER_NAME_LEN | REGISTER_NAME | REGISTER_VALUE_LEN | REGISTER_VALUE`
 
-    *NOTE: If NODE_ID = 0, the REGISTER_VALUE packet is considered to be a broadcast. Unique_ID must still be specified
+    *NOTE:* If NODE_ID = 0, the REGISTER_VALUE packet is considered to be a broadcast. Unique_ID must still be specified
 
 ## Set Register ##
 
