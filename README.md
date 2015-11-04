@@ -51,8 +51,8 @@ files if anyone wants those instead.
 
 This is the rendering of the shield:
 
-![Top](http://frozenpoint.github.io/atmega_a7105/images/board_images/a7105_shield_top.jpg)
-![Bottom](http://frozenpoint.github.io/atmega_a7105/images/board_images/a7105_shield_bottom.jpg)
+![Top](http://frozenpoint.github.io/atmega_a7105/images/board_images/a7105_shield_top.png)
+![Bottom](http://frozenpoint.github.io/atmega_a7105/images/board_images/a7105_shield_bottom.png)
 
 Here is what the assembed radio node looks like:
 
