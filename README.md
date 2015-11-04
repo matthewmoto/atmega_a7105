@@ -211,6 +211,43 @@ code. These are pretty simple and probably not very useful.
 
 # Mesh Layout #
 
+## Simplified Explanation ##
+In order to ease into what is meant in this project by the word "Mesh," presented here is a 
+simplified idea of how things go.
+
+Given N nodes (nodes being ATMega microcontrollers with a radio attached), they all talk to 
+each other and serve registers (values with names attached).  For a concrete example, consider
+3 nodes: A, B and C.  A serves a register "Motion" that correlates to a motion sensor attached to
+it. B doesn't serve any nodes, but responds to certain broadcasts (e.g. "BLOW\_FOG") and C doesn't
+serve registers either, but runs a serial interface to a host computer for a program or user to poke 
+the mesh.
+
+In this example, for there to be a "Mesh," the nodes need to agree on a few things:
+ 1. They are on a mesh
+ 2. What their "node ID" is (a value from 1-255 to identify the node on the mesh).
+ 3. That they have a 16-bit unique ID
+
+To do this, each node starts broadcasting (at a psuedo random interval), that it wants to join a mesh 
+and that it's node ID is 1 (everybody starts at 1), and it's unique ID is whatever it is. As these packets
+go out over the radio, any conflicts (duplicated node ID's ) are seen by the nodes and CONFLICT_NAME packets
+are sent out as a response.  The node with the lower unique ID increments their requested node ID and starts 
+the JOIN process over again. 
+
+If a node get's through the multi-second JOIN broadcasts without having CONFLICTS come back, it assumes itself 
+to be "on the mesh." It's important to note, that the conflict packets can come at any time and the rules still
+apply (the lower unique ID always re-joins as a different ID). It is this property that makes the mesh "self 
+healing" where if two groups of nodes exist that can't talk to each other (two separate meshes) suddenly can
+communicate (e.g. by moving closer together), they will conflict and re-order themselves to be a single mesh.
+
+
+So, back to the example, a bunch of JOIN packets fly around. A few CONFLICT's happen and the nodes A, B and C
+join as 1,2 and 3 (not necessarily in that order). Now, if node C starts sending requests to get the value of
+the "Motion" register, it doesn't care what node actually hosts that value, just that one does and value 
+responses come back (i.e. a nodes ID isn't considered a permanent thing).
+
+
+
+
 ## Primary Canons ##
  1. As stateless as practical. Large state means high RAM usage and inflexible rules. Both are catastrophic.
  2. Requesters are responsible for retries and request state management.
@@ -219,7 +256,7 @@ code. These are pretty simple and probably not very useful.
  4. Max of 255 nodes (0 is a special value meaning broadcast)
  5. Joining is the responsibility of good citizen nodes. There is no gatekeeper.
  6. Easy of use and reliability are the targets, security is not very important (it's a low power mesh network)
- 7. Max of 16 hops/repeats to avoid traffic contention.
+ 7. Avoid traffic contention whenver possible (don't repeat packets blindly).
 
 ## Packet Characteristics ##
 
@@ -357,7 +394,7 @@ of getting all registers on the network is:
   The responder (if there is one), sends back a REGISTER_VALUE packet like this:
     `REGISTER_VALUE | HOP/SEQ | NODE_ID | UNIQUE_ID | REGISTER_NAME_LEN | REGISTER_NAME | REGISTER_VALUE_LEN | REGISTER_VALUE`
 
-    NOTE: If NODE_ID = 0, the REGISTER_VALUE packet is considered to be a broadcast. Unique_ID must still be specified
+NOTE: If NODE_ID = 0, the REGISTER_VALUE packet is considered to be a broadcast. Unique_ID must still be specified
 
 ## Set Register ##
 
@@ -370,12 +407,11 @@ of getting all registers on the network is:
   If there is a node servicing that register (and the register can be set), it responds like this:
     `SET_REGISTER_ACK | HOP/SEQ | NODE_ID | UNIQUE_ID | TARGET_NODE_NUM | ERR_MSG_DATA | NULL_BYTE`
 
-    NOTE: If there is an error setting a register and the managing node
-           wants it known (always a good idea), they should include an ascii 
-           error message at the tail (null terminated) explaining what happened
-           so the developer can easily diagnose issues.
-
-           If there is ERR_MSG_DATA before the NULL_BYTE, the register was set successfully.
+NOTE: If there is an error setting a register and the managing node
+wants it known (always a good idea), they should include an ascii 
+error message at the tail (null terminated) explaining what happened
+so the developer can easily diagnose issues.
+If there is ERR_MSG_DATA before the NULL_BYTE, the register was set successfully.
 
 ## Node Characteristics ##
 
@@ -414,23 +450,23 @@ of getting all registers on the network is:
   Nodes filter packets for requests, responses and repeating. Below are details on the
   algorithm for each.
 
-  Requests:
-    Requests are filtered using the "Handled Request Cache" detailed above. If a
-    node sees the same request it just handled, it will ignore that request.  Another
-    identical request from the same requesting node *will* be handled due to the fact that
-    the new request will almost be guaranteed to have a different sequence number than the one in the cache.    
+#### Requests ####
+Requests are filtered using the "Handled Request Cache" detailed above. If a
+node sees the same request it just handled, it will ignore that request.  Another
+identical request from the same requesting node *will* be handled due to the fact that
+the new request will almost be guaranteed to have a different sequence number than the one in the cache.    
 
-  Responses:
-    Response packets are filtered out by utilizing the "Target Node Cache" described above.
-    If either a node-id and/or a unique-id are specified in the cache, only packets from those
-    id's will be processed by us as responses. This helps us to manage requests in the state machine such
-    as GET_NUM_REGISTERS where we will then know which NUM_REGISTERS packet to pay attention to
-    if it comes back (since it will be from the node we originally specified).
+#### Responses ####
+Response packets are filtered out by utilizing the "Target Node Cache" described above.
+If either a node-id and/or a unique-id are specified in the cache, only packets from those
+id's will be processed by us as responses. This helps us to manage requests in the state machine such
+as GET_NUM_REGISTERS where we will then know which NUM_REGISTERS packet to pay attention to
+if it comes back (since it will be from the node we originally specified).
 
-    Also, this prevents us from having our target node ID swapped in the middle of long-running
-    operations (like retrieving the names of all registers for a given node). Once we get the 
-    first NUM_REGISTERS packet back, we can filter on the unique ID of the node also so we won't
-    get garbage from a different node if a ID swap happens.
+Also, this prevents us from having our target node ID swapped in the middle of long-running
+operations (like retrieving the names of all registers for a given node). Once we get the 
+first NUM_REGISTERS packet back, we can filter on the unique ID of the node also so we won't
+get garbage from a different node if a ID swap happens.
 
 
 ### Packet Repeating ###
