@@ -48,3 +48,6 @@ code. These are pretty simple and probably not very useful.
 
 # Mesh Network Structure #
 Check out /notes/mesh.markdown for an overview of the mesh network features and packet structures.
+
+# Testing #
+![test me](http://frozenpoint.github.io/atmega_a7105/images/board_images/split_shield.jpg)
