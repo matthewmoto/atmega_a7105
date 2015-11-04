@@ -357,7 +357,7 @@ of getting all registers on the network is:
   The responder (if there is one), sends back a REGISTER_VALUE packet like this:
     `REGISTER_VALUE | HOP/SEQ | NODE_ID | UNIQUE_ID | REGISTER_NAME_LEN | REGISTER_NAME | REGISTER_VALUE_LEN | REGISTER_VALUE`
 
-    *NOTE:* If NODE_ID = 0, the REGISTER_VALUE packet is considered to be a broadcast. Unique_ID must still be specified
+    NOTE: If NODE_ID = 0, the REGISTER_VALUE packet is considered to be a broadcast. Unique_ID must still be specified
 
 ## Set Register ##
 
@@ -365,12 +365,12 @@ of getting all registers on the network is:
   it's all in one packet so there are limits on the size of the register name/value.
   
   The SET_REGISTER packet looks like this:
-    * SET_REGISTER | HOP/SEQ | NODE_ID | UNIQUE_ID |REGISTER_NAME_LEN | REGISTER_NAME | REGISTER_VALUE_LEN |REGISTER_VALUE
+    `SET_REGISTER | HOP/SEQ | NODE_ID | UNIQUE_ID |REGISTER_NAME_LEN | REGISTER_NAME | REGISTER_VALUE_LEN |REGISTER_VALUE`
 
   If there is a node servicing that register (and the register can be set), it responds like this:
-    * SET_REGISTER_ACK | HOP/SEQ | NODE_ID | UNIQUE_ID | TARGET_NODE_NUM | ERR_MSG_DATA | NULL_BYTE
+    `SET_REGISTER_ACK | HOP/SEQ | NODE_ID | UNIQUE_ID | TARGET_NODE_NUM | ERR_MSG_DATA | NULL_BYTE`
 
-    *NOTE: If there is an error setting a register and the managing node
+    NOTE: If there is an error setting a register and the managing node
            wants it known (always a good idea), they should include an ascii 
            error message at the tail (null terminated) explaining what happened
            so the developer can easily diagnose issues.
