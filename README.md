@@ -12,26 +12,30 @@ mesh topology and design, see the [Mesh Layout Section](#Mesh-Layout) below.
 
 # Background #
 
-In early 2015, I mistakenly bought a handful of A7105 radio breakouts 
-(also referred to as XL7105-SY-B) thinking they were NRF24L01's. The goal for
-these was to make this year's <LINK> Halloween Decorations wireless. After running
-150' of security wire the previous year, I had a pretty strong motivation to 
-never do that again. 
+In early 2015, I  bought a handful of what I thought were NRF24L01 radio breakouts
+in order to make [my 2015 Halloween Decorations](https://youtu.be/kfExGzUOxbg) wireless. 
+Having run 150' of security wire the previous year, accidentally cut a critical line 
+partway into the set-up and collecting it all back up the next day, I had a pretty strong motivation to 
+make the switch.
 
-There wasn't a bunch of useful code out there for this chip (the rcgroups.com guys
-were probably the most mature but were only using a simple protocol for 
+In my haste to buy radios, I didn't analyze the Engrish on the product page (I was buying through
+DX) and ended up with a bunch of A7105 breakouts (Also known as XL7105-SY-B).
+
+There wasn't a bunch of useful code out there for these chips (the rcgroups.com guys
+were probably the most mature but they were only really using a simple protocol for 
 controlling mini quadcopters).
 
-After lamenting my choice of chip and thinking to just buy the correct radios, I looked 
-into the NRF24L01's further. I decided I didn't really like what was available for those either (the RF24Mesh
-project required a master node running for all the routing to work).
+Lamenting my poor selection and thinking to just buy the correct radios, I looked 
+into the NRF24L01's further and found I didn't really dig what was available for those either (the RF24Mesh
+project, cool as it is, required a master node running for all the routing to work).
 
-As a final bad decision, I figured I could make a lightweight mesh stack that
-was general purpose, but would solve my problems and use the 10-odd radios that I 
-had purchased.
+As a final bad decision (I am not a smart man...), I figured I could make a general purpose lightweight mesh stack that
+would solve my problems and put the 10-odd radios that I had purchased to good use.
 
-This code is the result of those bad decisions. The radio hardware itself isn't that important
-as far as the Mesh logic goes (it could be adapted to the NRF24L01 at some point).
+This code is the result of those bad decisions. After having implemented the mesh, I realize
+the radio hardware itself isn't that important as far as the Mesh logic goes 
+(it can be adapted to the NRF24L01's or similar at some point). However, I'm using A7105's 
+for now. The good news is you can get a pair of radios for under $5USD.
 
 # Hardware #
 Because the A7105 is a 3.3V chip and the Pro Mini's I use are 5V, I decided to build shields that had
@@ -41,7 +45,11 @@ goes low when the radio is done transmitting or receiving so we can use an inter
 data is ready to read or is done being sent over the air) and the other as the MISO line for the SPI bus. 
 Unfortunately, the GIO pins on the radio aren't nice enough to go high-Z when the chip select line is high so 
 I also included a tri-state buffer to do that in case this node is used on a bus with other SPI devices.
-Finally, the A7105 uses a weird 2MM pitch metric header to mount so the shield also accomodates that.
+Finally, the A7105 uses a weird 2MM pitch metric header to mount so the shield also accommodates that.
+
+If you're using 3.3V Arduino's, you won't really need any of this (except possibly the MISO tri-state buffer
+if you plan on talking to other SPI devices), but I like 5V stuff since all my other hardware (relay boards, 
+MOSFETS, etc) for my Halloween project are 5V.
 
 The Eagle files for my shield are included in the code repository in the hardware/ directory and the PCB can
 be ordered on [Osh Park](https://oshpark.com/shared_projects/frDcWgtm) This is not a plug, it's just 
@@ -54,7 +62,7 @@ This is the rendering of the shield:
 ![Top](http://frozenpoint.github.io/atmega_a7105/images/board_images/a7105_shield_top.png)
 ![Bottom](http://frozenpoint.github.io/atmega_a7105/images/board_images/a7105_shield_bottom.png)
 
-Here is what the assembed radio node looks like:
+Here is what the assembled radio node looks like:
 
 ![The Goods](http://frozenpoint.github.io/atmega_a7105/images/board_images/assembled_shield.jpg)
 
@@ -64,9 +72,8 @@ And here is what it looks like with the Pro Mini and XL7105 removed:
 
 # Getting Started #
 
-A single node mesh isn't very interesting. Some of these examples use 2 radios under the same 
-Pro Mini, some have only one radio but are meant to talk to other nodes on the mesh. At the top
-of each, there should be a brief hookup guide to help explain how each one fits together.
+A single node mesh isn't very interesting. Thusly, to start doing things other than being a 
+lonely radio singing to yourself, you'll need a pair of nodes to make a mesh.
 
 ## Register Host Test ##
 This sketch can be found at examples/register\_host\_test/atmega\_a7105.ino.  To build it, simply copy 
@@ -78,11 +85,18 @@ then poked with either the Serial Mesh Interface (see below) or a sketch of your
 
 ## Serial Mesh Interface ##
 This is the firmware for the A7105 Serial Mesh Interface. This firmware                
-runs on the mesh node connected to the Halloween 2015 scene controller                 
-and allows the software on that machine to communicate with the effects                
-mesh network via a simple serial interface.
+runs on a Pro Mini (or other Arduino) connected to a host machine via in FTDI
+serial interface.
+
+The Serial interface runs at 115200 baud and the serial\_mon.sh script can be used
+with an argument (e.g. /dev/ttyUSB0) to start communicating with the node. This is the 
+most useful example and is the actual bridge firmware used for my Halloween 2015 Prop Controller
+script (there is a Python library that sits on the serial port and talks to the mesh).
+
+See the Hook-Up instructions in the comments of the sketch for help getting this connected if you aren't
+using the Pro Mini shield.
                                                                                        
-Note: All Serial commands return either the specified "Response:" response defined below or 
+NOTE: All Serial commands return either the specified "Response:" response defined below or 
 the universal error response that looks like this: `"ERROR,ERROR_ID,MSG\r\n"`
 
 Where `ERROR_ID` is a non-zero integer defined below and `MSG` is a contextually helpful
@@ -140,10 +154,10 @@ Serial Commands:
     Response: SET_REGISTER_ACK,REGISTER_NAME
     POSSIBLE errors: A7105_Mesh_NOT_ON_MESH, A7105_Mesh_INVALID_REGISTER_INDEX, A7105_Mesh_INVALID_REGISTER_VALUE
     
-    NOTE: REGISTER_VALUE is interpreted differently depending on FORMAT. If FORMAT isZ:
+    NOTE: REGISTER_VALUE is interpreted differently depending on FORMAT. If FORMAT is:
       * STRING: REGISTER_VALUE is sent as a string whose value is terminated by /r/n on
                 the serial terminal (not included in value sent).
-      * BINARY: REGISTER_VALUE is taken to be a byte-alinged ASCII_HEX string whose value is sent
+      * BINARY: REGISTER_VALUE is taken to be a byte-aligned ASCII_HEX string whose value is sent
                 as a raw binary value.
       * UINT32: REGISTER_VALUE must be an ascii string representing a numerical value between
                 0 and UINT32_MAX.
@@ -158,7 +172,7 @@ Serial Commands:
 LISTEN-Mode Data (not directly associated with a command):
   REGISTER_VALUE,<REGISTER_NAME>,<REGISTER_VALUE>
   If a node pushes a REGISTER_VALUE packet out without a node-id, it is considered a value broadcast 
-  and will be pushed to the serial terminal at the time of arrival, however it will not preceed the 
+  and will be pushed to the serial terminal at the time of arrival, however it will not precede the 
   current operation. 
 ```
 ## Building The Code ##
