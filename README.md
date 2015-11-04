@@ -91,35 +91,36 @@ plaintext ascii string to aid in identifying the issue.
 All responses or interrupting data will be one or more comma delimited lines ending in `/r/n`.
 
 Serial Commands:                                                                       
-  `ECHO`: Turns on command echoing                                                       
-  Response: `ECHO,<TOGGLED>`
+```  
+  ECHO: Turns on command echoing                                                       
+  Response: ECHO,<TOGGLED>
   NOTE: TOGGLED is 1/0 for on/off (respectively) (default is OFF)                      
 
-  `LISTEN`: Listen for broadcast events from the mesh.
-    Response: N lines of `REGISTER_VALUE,REGISTER_NAME,REGISTER_VALUE\r\n`
+  LISTEN: Listen for broadcast events from the mesh.
+    Response: N lines of REGISTER_VALUE,REGISTER_NAME,REGISTER_VALUE\r\n
     Possible errors: A7105_Mesh_NOT_ON_MESH
     Note: No other commands may be performed during a LISTEN. To exit LISTEN,          
           pass a byte (or less than 120 bytes) and wait for the string                 
-          `"READY\r\n"` to come back, before issuing any commands.                       
+          "READY\r\n" to come back, before issuing any commands.                       
           When entering LISTEN mode, the Arduino will first send back                  
-          the line `"LISTEN\r\n"` as an ACK that it is now listening.                    
+          the line "LISTEN\r\n" as an ACK that it is now listening.                    
 
     Possible errors: A7105_Mesh_MESH_ALREADY_JOINING
                                                                                        
-  `RESET`:    Leave the current mesh (no longer participate), reinitialize               
+  RESET:    Leave the current mesh (no longer participate), reinitialize               
             the A7105 radio and generate a new unique ID.                              
-    Response: `INIT,<SUCCESS>,UNIQUE_ID`              
+    Response: INIT,<SUCCESS>,UNIQUE_ID              
     Possible errors: A7105_Mesh_NOT_ON_MESH
     NOTE: SUCCESS is 0 or 1 for failure/success respectively and                       
           UNIQUE_ID is an ASCII_HEX string for the 2-byte unique ID                    
           generated for this instance.                                                 
 
-  `PING`: Ping the mesh to get the connected nodes
-    Response: `PING,NODE_ID_1,NODE_ID_2,.....NODE_ID_N` (where node ID's are integers of found nodes on the mesh)
+  PING: Ping the mesh to get the connected nodes
+    Response: PING,NODE_ID_1,NODE_ID_2,.....NODE_ID_N (where node ID's are integers of found nodes on the mesh)
     Possible errors: A7105_Mesh_NOT_ON_MESH, A7105_Mesh_BUSY
 
-  `LIST_REGISTERS`: Get all register names on the mesh
-    Response: `LIST_REGISTERS,REGISTER_NAME_1,REGISTER_NAME_2,....,ERRORS`
+  LIST_REGISTERS: Get all register names on the mesh
+    Response: LIST_REGISTERS,REGISTER_NAME_1,REGISTER_NAME_2,....,ERRORS
     Possible errors: A7105_Mesh_NOT_ON_MESH, A7105_Mesh_BUSY
     
     NOTE: The ERRORS field in the response is a numeric value (0-255)
@@ -128,15 +129,15 @@ Serial Commands:
           so if this value is non-zero, the results should be considered
           incomplete
 
-  `GET_REGISTER,<REGISTER_NAME>,<FORMAT>`: Get's the value of a single register identified by `<REGISTER_NAME>`
-    Response: `GET_REGISTER,REGISTER_NAME,REGISTER_VALUE`
+  GET_REGISTER,<REGISTER_NAME>,<FORMAT>: Get's the value of a single register identified by <REGISTER_NAME>
+    Response: GET_REGISTER,REGISTER_NAME,REGISTER_VALUE
     POSSIBLE errors: A7105_Mesh_NOT_ON_MESH, A7105_Mesh_INVALID_REGISTER_INDEX
   
     NOTE: FORMAT can be "STRING" for ASCII data, "BINARY" for binary (output will be
           ASCII hex), or "UINT32" for unsigned integer data.
 
-  `SET_REGISTER,<REGISTER_NAME>,<FORMAT>,<REGISTER_VALUE>`: Set's the value of a single register identified by `<REGISTER_NAME>`
-    Response: `SET_REGISTER_ACK,REGISTER_NAME`
+  SET_REGISTER,<REGISTER_NAME>,<FORMAT>,<REGISTER_VALUE>: Set's the value of a single register identified by <REGISTER_NAME>
+    Response: SET_REGISTER_ACK,REGISTER_NAME
     POSSIBLE errors: A7105_Mesh_NOT_ON_MESH, A7105_Mesh_INVALID_REGISTER_INDEX, A7105_Mesh_INVALID_REGISTER_VALUE
     
     NOTE: REGISTER_VALUE is interpreted differently depending on FORMAT. If FORMAT isZ:
@@ -147,21 +148,19 @@ Serial Commands:
       * UINT32: REGISTER_VALUE must be an ascii string representing a numerical value between
                 0 and UINT32_MAX.
 
-  `VALUE_BROADCAST,<REGISTER_NAME>,<FORMAT>,<REGISTER_VALUE>`: Broadcasts a value for a register (does not need to actually
+  VALUE_BROADCAST,<REGISTER_NAME>,<FORMAT>,<REGISTER_VALUE>: Broadcasts a value for a register (does not need to actually
                                                              be hosted).
-    Response: `READY` 
+    Response: READY 
     Possible errors: TBD
       
-    NOTE: See `SET_REGISTER` above for possible values of FORMAT.
-    
-                
+    NOTE: See SET_REGISTER above for possible values of FORMAT.
  
 LISTEN-Mode Data (not directly associated with a command):
-  `REGISTER_VALUE,<REGISTER_NAME>,<REGISTER_VALUE>`
-  If a node pushes a `REGISTER_VALUE` packet out without a node-id, it is considered a value broadcast 
+  REGISTER_VALUE,<REGISTER_NAME>,<REGISTER_VALUE>
+  If a node pushes a REGISTER_VALUE packet out without a node-id, it is considered a value broadcast 
   and will be pushed to the serial terminal at the time of arrival, however it will not preceed the 
   current operation. 
-
+```
 ## Building The Code ##
 The example sketches are all based on building with [arscons](https://github.com/suapapa/arscons).
 
