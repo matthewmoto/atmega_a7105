@@ -1,6 +1,4 @@
-%A7105 Mesh Network Library
-%Matthew Meno
-%November 2, 2015
+# ATMega A7105 Mesh Network Library #
 
 # Introduction #
 
@@ -15,7 +13,7 @@ Coupled with some Pro Mini's and patience, I built a mesh network stack
 based on these little radios. 
 
 # Building The Code #
-The example sketches are all based on building with (arscons)[https://github.com/suapapa/arscons].
+The example sketches are all based on building with [arscons](https://github.com/suapapa/arscons).
 
 However, there are a few caveats. Namely, the code expects an Arduino distribution in the resources/
 directory. One is included, but needs to be unpacked first:
