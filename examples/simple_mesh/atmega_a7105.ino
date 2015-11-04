@@ -46,18 +46,6 @@ and bounces data between them using a single
 arduino (pro mini in the original case).
 
 
-TODO: 
-
-  * Update A7105 library to include status errors and such
-    for the relevant functions as well as implement (optional)
-    pin interrupt notifications for data being ready
-
-Then, after we successfully pass data, add 
-an interrupt to notify us of pending data to read.
-
-After everything works, we can start to library-ify the
-results into the mesh library.
-
 */
 
 
