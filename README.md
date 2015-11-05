@@ -75,6 +75,10 @@ And here is what it looks like with the Pro Mini and XL7105 removed:
 A single node mesh isn't very interesting. Thusly, to start doing things other than being a 
 lonely radio singing to yourself, you'll need a pair of nodes to make a mesh.
 
+I included a few simple example sketches to use when you're getting started with the
+code. These include test programs used to develop the mesh code and actual production 
+code used in the first project (my Halloween 2015 house decorations).
+
 ## Register Host Test ##
 This sketch can be found at examples/register\_host\_test/atmega\_a7105.ino.  To build it, simply copy 
 it to the root of the repo, and do the usual scons build/upload.
@@ -220,10 +224,6 @@ Regardless, the best way to see what your radio is doing is to toggle the  just 
 There is also a script (one liner) in the repository called "serial_mon.sh", running it fires 
 up screen and archives the output to screenlog.0
 ` ./serial\_mon.sh /dev/ttyUSB0`  
- 
-# Examples #
-I included a few simple example sketches to use when you're getting started with the
-code. These are pretty simple and probably not very useful.
 
 # Mesh Layout #
 
@@ -572,5 +572,36 @@ around. Thusly the user should not trust the ID of a node for any semblance of u
 The Node-ID is meant to be an easy way to address nodes with a limit on the number that 
 can be on the mesh at any time (255) and keep the packet requirements short.
 
+# Mesh API #
 
+All of the following is also found in a7105_mesh.h, however for the sake of the reader
+browsing the page to determine if this library is useful for them, I've included it below.
+
+The main A7105_Mesh API entry points are documented below, but the reader is encouraged to 
+read the code (and the A7105 datasheet) to get the full scoop on how to poke around this 
+little chip to make it dance the right way.
+
+
+## Callback vs Blocking ##
+
+The A7105_Mesh API is designed to have every entry point optionally have a callback
+for ansynchronus behavior. The novice programmer who doesn't want or need this feature
+can safely pass NULL for these arguments and have the library behave as expected (i.e. the
+calling code wait for the successful completion of the operation). However, the developer 
+having their code perform other time-critical operations (or simply one using multiple radios
+simultaneously) have the option to pass a callback to be called when the current operation
+(join, get_register, ping, etc.) completes with a status code so the main event loop isn't 
+monopolized by the radio code.
+
+## A7105_Mesh_Join ##
+`A7105_Mesh_Status A7105_Mesh_Join(struct A7105_Mesh* node, void (*join_finished_callback)(A7105_Mesh_Status))`
+### Parameters ###
+  * node: Must be a node successfully initialized with A7105_Mesh_Initialize()
+  * join_finished_callback: The function called when the JOIN operation completes or times out. If this is NULL,                             
+                            A7105_Mesh_Join will use an internal callback and block until the operation completes 
+                            or times out. 
+
+### Returns ###
+  * A7105_Mesh_STATUS_OK on success or if ping_finished_callback is NULL.
+  * A7105_Mesh_MESH_FULL if the mesh already has 255 nodes.     
 
