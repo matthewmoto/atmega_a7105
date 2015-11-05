@@ -593,8 +593,51 @@ simultaneously) have the option to pass a callback to be called when the current
 (join, get_register, ping, etc.) completes with a status code so the main event loop isn't 
 monopolized by the radio code.
 
+## A7105_Mesh_Initialize ##
+This function just set's up the hardware and initial structures for
+a A7105 radio to be used on a mesh, no meshes are joined.
+
+### Prototype ###
+`A7105_Mesh_Status A7105_Mesh_Initialize(struct A7105_Mesh* node,
+                                        int chip_select_pin,
+                                        int wtr_pin,
+                                        uint32_t mesh_id,
+                                        A7105_DataRate data_rate,
+                                        byte channel,
+                                        A7105_TxPower power,
+                                        int unconnected_analog_pin);`
+
+### Parameters ###
+ * node: Pointer to a A7105_Mesh structure for state tracking (no fields need be set)
+ * chip_select_pin: The arduino pin to use as a chip_select for the radio.
+           NOTE: pinMode() is called in this function for this pin.
+ * wtr_pin: The arduino pin to use that is connected to the GPIO2 
+            pin on the radio. The WTR function (see the datasheet) 
+            makes this pin go high when the radio is active TX or 
+            RX. Specify -1 to ignore. Otherwise, a pin interrupt 
+            will be set for this pin and it will be specified as 
+            input.
+ * mesh_id: 4-byte ID to use for communicating radios to recognize
+             each-other's traffic. All radios that talk to each other on a mesh
+             should have the same 'radio_id'. 
+ * data_rate: The data rate for communications. Slower = longer-range
+ * channel: 0 - 168. The channel to use for communications. 
+ * power: The power setting to use for TX. Higher is better but 
+          make sure you have a big enough power supply for this. These are defined in
+          a7105.h.
+ * unconnected_analog_pin: A pin that is not connected to a pull-up/pull-down resistor. This
+                           pin is sampled for entropy to generate a more reliably random unique node ID.
+
+
+### Returns ###
+ * A7105_Mesh_STATUS_OK on success or if ping_finished_callback is NULL.          
+ * A7105_Mesh_MESH_FULL if the mesh already has 255 nodes.         
+
 ## A7105_Mesh_Join ##
+
+### Prototype ###
 `A7105_Mesh_Status A7105_Mesh_Join(struct A7105_Mesh* node, void (*join_finished_callback)(A7105_Mesh_Status))`
+
 ### Parameters ###
   * node: Must be a node successfully initialized with A7105_Mesh_Initialize()
   * join_finished_callback: The function called when the JOIN operation completes or times out. If this is NULL,                             
