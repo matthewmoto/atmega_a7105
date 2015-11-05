@@ -52,7 +52,7 @@ if you plan on talking to other SPI devices), but I like 5V stuff since all my o
 MOSFETS, etc) for my Halloween project are 5V.
 
 The Eagle files for my shield are included in the code repository in the hardware/ directory and the PCB can
-be ordered on [Osh Park](https://oshpark.com/shared_projects/frDcWgtm) This is not a plug, it's just 
+be ordered on [OSH Park](https://oshpark.com/shared_projects/frDcWgtm) This is not a plug, it's just 
 where I had my fabricated. I included the original design files and 
 Bill of Materials in case you want to make them yourself or use a different fab house. I can post the Gerber 
 files if anyone wants those instead.
@@ -208,8 +208,8 @@ To upload to your board:
 Note: check out the arscons page and update your arscons.json configuration file if
 you aren't running a 5V 16Mhz Pro Mini via a FTDI programmer as I am.
 
-Also, if you are using the graphical Aruduino IDE, feel free to just copy the libraries from their directories
-and place in your Arudino library path. I haven't tested this method yet so it may need a little fiddling 
+Also, if you are using the graphical Arduino IDE, feel free to just copy the libraries from their directories
+and place in your Arduino library path. I haven't tested this method yet so it may need a little fiddling 
 to get it working.
 
 # Debugging Your Nodes #
@@ -243,14 +243,14 @@ In this example, for there to be a "Mesh," the nodes need to agree on a few thin
  2. What their "node ID" is (a value from 1-255 to identify the node on the mesh).
  3. That they have a 16-bit unique ID
 
-To do this, each node starts broadcasting (at a psuedo random interval), that it wants to join a mesh 
+To do this, each node starts broadcasting (at a pseudo random interval), that it wants to join a mesh 
 and that it's node ID is 1 (everybody starts at 1), and it's unique ID is whatever it is. As these packets
 go out over the radio, any conflicts (duplicated node ID's ) are seen by the nodes and CONFLICT_NAME packets
 are sent out as a response.  The node with the lower unique ID increments their requested node ID and starts 
 the JOIN process over again. 
 
-If a node get's through the multi-second JOIN broadcasts without having CONFLICTS come back, it assumes itself 
-to be "on the mesh." It's important to note, that the conflict packets can come at any time and the rules still
+If a node get's through the multi-second JOIN broadcasts without having CONFLICTS come back for their selected node ID, it assumes itself 
+to be "on the mesh with that ID" It's important to note, that the conflict packets can come at any time and the rules still
 apply (the lower unique ID always re-joins as a different ID). It is this property that makes the mesh "self 
 healing" where if two groups of nodes exist that can't talk to each other (two separate meshes) suddenly can
 communicate (e.g. by moving closer together), they will conflict and re-order themselves to be a single mesh.
@@ -261,7 +261,22 @@ join as 1,2 and 3 (not necessarily in that order). Now, if node C starts sending
 the "Motion" register, it doesn't care what node actually hosts that value, just that one does and value 
 responses come back (i.e. a nodes ID isn't considered a permanent thing).
 
+All nodes respond to PING packets with PONG packets (for simple presence detection). The PING-ing node keeps a 
+presence bitmask (255 bit) that can be used to iterate and poke every seen node on the mesh.  For discovering what
+registers are available on a mesh, a node performs the following steps:
+ 1. PING all the nodes to find available nodes
+ 2. For every found node, query how many registers it serves (GET_NUM_REGISTERS packet)
+ 3. For the current node, iterate from 0 to N (N being the number of served registers) and query the register name for each (GET_REGISTER_NAME)
 
+If a node knows the name of the register it wants to query, it can simply send a GET_REGISTER packet with the name of the register in question
+and expect a REGISTER_VALUE packet in response (assuming the node serving that register is currently available). If a node wants to remotely set a
+register value, it can likewise send a SET_REGISTER packet with the name and new value of the register. For SET_REGISTER requests, a 
+SET_REGISTER_ACK packet is expected to come back with either success or some error message from the remote node explaining an error (in ascii).
+
+Beyond this, there is only one special case for getting/setting registers: value broadcasts. Since node numbering starts at 0, if a 
+REGISTER_VALUE packet is seen with a node ID of 0 in the header, it is assumed to be a broadcast. These broadcasts are repeated through the
+mesh by all nodes and are meant for notification of global events. They are not ACK'd by any nodes. Broadcasts can be useful if a node needs to
+push a notification to the mesh rather than being polled for a value.
 
 
 ## Primary Canons ##
@@ -272,7 +287,7 @@ responses come back (i.e. a nodes ID isn't considered a permanent thing).
  4. Max of 255 nodes (0 is a special value meaning broadcast)
  5. Joining is the responsibility of good citizen nodes. There is no gatekeeper.
  6. Easy of use and reliability are the targets, security is not very important (it's a low power mesh network)
- 7. Avoid traffic contention whenver possible (don't repeat packets blindly).
+ 7. Avoid traffic contention whenever possible (don't repeat packets blindly).
 
 ## Packet Characteristics ##
 
@@ -574,77 +589,20 @@ can be on the mesh at any time (255) and keep the packet requirements short.
 
 # Mesh API #
 
-All of the following is also found in a7105_mesh.h, however for the sake of the reader
-browsing the page to determine if this library is useful for them, I've included it below.
+The API and main entry points are all documented in a7105\_mesh.h with explanations of parameters and 
+possible return values.  Instead of duplicating it here, the reader is encouraged to study the example
+programs provided and the in-code documentation.
 
-The main A7105_Mesh API entry points are documented below, but the reader is encouraged to 
-read the code (and the A7105 datasheet) to get the full scoop on how to poke around this 
-little chip to make it dance the right way.
-
+Additionally, there are a number of packet-related magic numbers specified in a7105_mesh_packet.h that
+may be helpful.
 
 ## Callback vs Blocking ##
 
 The A7105_Mesh API is designed to have every entry point optionally have a callback
-for ansynchronus behavior. The novice programmer who doesn't want or need this feature
+for asynchronous behavior. The novice programmer who doesn't want or need this feature
 can safely pass NULL for these arguments and have the library behave as expected (i.e. the
 calling code wait for the successful completion of the operation). However, the developer 
 having their code perform other time-critical operations (or simply one using multiple radios
 simultaneously) have the option to pass a callback to be called when the current operation
 (join, get_register, ping, etc.) completes with a status code so the main event loop isn't 
 monopolized by the radio code.
-
-## A7105_Mesh_Initialize ##
-This function just set's up the hardware and initial structures for
-a A7105 radio to be used on a mesh, no meshes are joined.
-
-### Prototype ###
-`A7105_Mesh_Status A7105_Mesh_Initialize(struct A7105_Mesh* node,
-                                        int chip_select_pin,
-                                        int wtr_pin,
-                                        uint32_t mesh_id,
-                                        A7105_DataRate data_rate,
-                                        byte channel,
-                                        A7105_TxPower power,
-                                        int unconnected_analog_pin);`
-
-### Parameters ###
- * node: Pointer to a A7105_Mesh structure for state tracking (no fields need be set)
- * chip_select_pin: The arduino pin to use as a chip_select for the radio.
-           NOTE: pinMode() is called in this function for this pin.
- * wtr_pin: The arduino pin to use that is connected to the GPIO2 
-            pin on the radio. The WTR function (see the datasheet) 
-            makes this pin go high when the radio is active TX or 
-            RX. Specify -1 to ignore. Otherwise, a pin interrupt 
-            will be set for this pin and it will be specified as 
-            input.
- * mesh_id: 4-byte ID to use for communicating radios to recognize
-             each-other's traffic. All radios that talk to each other on a mesh
-             should have the same 'radio_id'. 
- * data_rate: The data rate for communications. Slower = longer-range
- * channel: 0 - 168. The channel to use for communications. 
- * power: The power setting to use for TX. Higher is better but 
-          make sure you have a big enough power supply for this. These are defined in
-          a7105.h.
- * unconnected_analog_pin: A pin that is not connected to a pull-up/pull-down resistor. This
-                           pin is sampled for entropy to generate a more reliably random unique node ID.
-
-
-### Returns ###
- * A7105_Mesh_STATUS_OK on success or if ping_finished_callback is NULL.          
- * A7105_Mesh_MESH_FULL if the mesh already has 255 nodes.         
-
-## A7105_Mesh_Join ##
-
-### Prototype ###
-`A7105_Mesh_Status A7105_Mesh_Join(struct A7105_Mesh* node, void (*join_finished_callback)(A7105_Mesh_Status))`
-
-### Parameters ###
-  * node: Must be a node successfully initialized with A7105_Mesh_Initialize()
-  * join_finished_callback: The function called when the JOIN operation completes or times out. If this is NULL,                             
-                            A7105_Mesh_Join will use an internal callback and block until the operation completes 
-                            or times out. 
-
-### Returns ###
-  * A7105_Mesh_STATUS_OK on success or if ping_finished_callback is NULL.
-  * A7105_Mesh_MESH_FULL if the mesh already has 255 nodes.     
-
