@@ -182,6 +182,16 @@ However, there are a few caveats. Namely, the code expects an Arduino distributi
 directory. One is included, but needs to be unpacked first:
 ` cd resources/ ; unzip arduino-1.6.1-linux32.tar.xz`
 
+Also, arscons expects the sketch name to be the same as the directory it is in (the reason while all examples
+are named atmega-a7105.ino in their respective directories).
+
+To build an example (e.g. the serial_mesh_interface example) and push it to an arduino:
+```
+  (from the repo root)
+  $ cp examples/serial_mesh_interface/atmega_a7105.ino .
+  scons ARDUINO_PORT=/dev/ttyUSB0 upload #substitute your serial port name where applicable
+```
+
 To build the current sketch (atmega_a7105.ino), type:
 `scons`
 
@@ -189,17 +199,23 @@ To clean:
 `scons -c`
 
 To upload to your board:
-`scons upload`
+`scons ARDUINO_PORT=YOUR_SERIAL_PORT upload`
 
-Note, check out the arscons page and update your arscons.json configuration file if
+Note: check out the arscons page and update your arscons.json configuration file if
 you aren't running a 5V 16Mhz Pro Mini via a FTDI programmer as I am.
+
+Also, if you are using the graphical Aruduino IDE, feel free to just copy the libraries from their directories
+and place in your Arudino library path. I haven't tested this method yet so it may need a little fiddling 
+to get it working.
 
 # Debugging Your Nodes #
 
-To enable serial debugging output in the library, just uncomment the line:
-`#define A7105_MESH_DEBUG`
+Sometimes the mesh won't do what you want. This might be a bug, it might be your code or (most likely) it might 
+be a connector that has a bit of solder on it or is bent or something else that makes me FURIOUS, AAAAAHHHHH!!!
 
-This will output internal state and received packet dumps to help diagnose problems.
+
+Regardless, the best way to see what your radio is doing is to toggle the  just uncomment the line:
+`#define A7105_MESH_DEBUG` in a7105_mesh.h. This will output internal state and received packet dumps to help diagnose problems.
 
 There is also a script (one liner) in the repository called "serial_mon.sh", running it fires 
 up screen and archives the output to screenlog.0
