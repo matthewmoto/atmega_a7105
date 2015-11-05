@@ -266,7 +266,7 @@ presence bitmask (255 bit) that can be used to iterate and poke every seen node 
 registers are available on a mesh, a node performs the following steps:
  1. PING all the nodes to find available nodes
  2. For every found node, query how many registers it serves (GET_NUM_REGISTERS packet)
- 3. For the current node, iterate from 0 to N (N being the number of served registers) and query the register name for each (GET_REGISTER_NAME)
+ 3. For the current node, iterate from 0 to N-1 (N being the number of served registers) and query the register name for each (GET_REGISTER_NAME)
 
 If a node knows the name of the register it wants to query, it can simply send a GET_REGISTER packet with the name of the register in question
 and expect a REGISTER_VALUE packet in response (assuming the node serving that register is currently available). If a node wants to remotely set a
