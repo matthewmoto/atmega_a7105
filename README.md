@@ -59,16 +59,16 @@ files if anyone wants those instead.
 
 This is the rendering of the shield:
 
-![Top](http://frozenpoint.github.io/atmega_a7105/images/board_images/a7105_shield_top.png)
-![Bottom](http://frozenpoint.github.io/atmega_a7105/images/board_images/a7105_shield_bottom.png)
+![Top](http://matthewmoto.github.io/atmega_a7105/images/board_images/a7105_shield_top.png)
+![Bottom](http://matthewmoto.github.io/atmega_a7105/images/board_images/a7105_shield_bottom.png)
 
 Here is what the assembled radio node looks like:
 
-![The Goods](http://frozenpoint.github.io/atmega_a7105/images/board_images/assembled_shield.jpg)
+![The Goods](http://matthewmoto.github.io/atmega_a7105/images/board_images/assembled_shield.jpg)
 
 And here is what it looks like with the Pro Mini and XL7105 removed:
 
-![Split Apart](http://frozenpoint.github.io/atmega_a7105/images/board_images/split_shield.jpg)
+![Split Apart](http://matthewmoto.github.io/atmega_a7105/images/board_images/split_shield.jpg)
 
 # Getting Started #
 
