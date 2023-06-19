@@ -482,6 +482,10 @@ A7105_Status_Code A7105_Easy_Listen_For_Packets(struct A7105* radio,
                                                 byte length);
 
 
+void A7105_Pause(struct A7105* radio);
+void A7105_Resume(struct A7105* radio);
+
+
 /*
 void _A7105_Pin_Interrupt_Callback():
   This is an internal function that is the registered callback with 

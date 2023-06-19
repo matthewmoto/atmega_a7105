@@ -35,7 +35,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #include <stdint.h>
 #include <SPI.h>
 #include "a7105.h"
-#include "../../resources/PinChangeInt/PinChangeInt.h"
+#include "PinChangeInt.h"
 
 //HACK: A 328P only has 19 pins, but we oversize this array to try to keep things agnostic to the different AVR chips
 volatile byte _A7105_INTERRUPT_COUNTS[64]; //Interrupt tracking for radio RX notifications (0 = ignore for one interrupt, 1 = no interrupts, 2 = interrupt detected)
@@ -538,6 +538,18 @@ A7105_Status_Code A7105_Easy_Listen_For_Packets(struct A7105* radio,
 
 
   return A7105_STATUS_OK;
+}
+
+
+
+void A7105_Pause(struct A7105* radio)
+{
+  detachInterrupt(radio->_INTERRUPT_PIN); 
+}
+
+void A7105_Resume(struct A7105* radio)
+{
+  attachPinChangeInterrupt(radio->_INTERRUPT_PIN,_A7105_Pin_Interrupt_Callback,FALLING);
 }
 
 /*

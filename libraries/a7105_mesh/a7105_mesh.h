@@ -78,7 +78,7 @@ POSSIBILITY OF SUCH DAMAGE.
 #define A7105_MESH_PING_TIMEOUT 4000 
 
 //Time after which directed requests will be considered timed-out
-#define A7105_MESH_REQUEST_TIMEOUT 4000 
+#define A7105_MESH_REQUEST_TIMEOUT 2000 
 
 //Max number of response repeats we have going on at once
 //#define A7105_MESH_RESPONSE_REPEAT_CACHE_SIZE 4
